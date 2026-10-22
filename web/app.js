@@ -73,6 +73,7 @@ function deal(it) {
 const DUPE_WHY = {
   inspired: "Dyqani e shet si version të frymëzuar nga ky parfum.",
   active: "I njëjti përbërës kryesor, në të njëjtën përqindje, në të njëjtin lloj produkti.",
+  known: "Dupe që komuniteti i bukurisë e krahason gjerësisht me origjinalin. Përbërësit nuk janë të njëjtë; ngjashmëria është te rezultati.",
 };
 function dupePair(r, { showOrig = true } = {}) {
   const size = (x) => (x ? ` <small>${esc(x)}</small>` : "");
@@ -142,7 +143,7 @@ async function pageHome() {
   ${d.dupes && d.dupes.length ? `<section class="section"><div class="wrap">
     <div class="section-head"><h2>dupe të produkteve të shtrenjta</h2><a href="/dupe" data-link>Të gjitha dupe</a></div>
     <p class="lead">Jo i njëjti produkt, por bën të njëjtën punë për shumë më pak. Te parfumet, dyqani vetë thotë nga cili parfum është frymëzuar;
-      te kujdesi i lëkurës, përbërësi kryesor dhe përqindja janë të njëjta.</p>
+      te kujdesi i lëkurës, përbërësi kryesor dhe përqindja janë të njëjta; te grimi, janë dupe që krahasohen gjerësisht.</p>
     <div class="dps">${d.dupes.slice(0, 6).map((r) => dupePair(r)).join("")}</div>
   </div></section>` : ""}
 
@@ -334,7 +335,7 @@ async function pageDupes(params) {
   main.innerHTML = `<div class="wrap">
     <div class="page-head"><h1>dupe</h1>
       <p>${plural(d.total, "produkt i shtrenjtë", "produkte të shtrenjta")} me një alternativë të paktën 30% më të lirë. Jo i njëjti produkt: për secilin themi pse e quajmë dupe.</p></div>
-    <nav class="tabs" aria-label="Lloji">${tab(null, "Të gjitha")}${tab("inspired", "Parfume")}${tab("active", "Kujdesi i lëkurës")}</nav>
+    <nav class="tabs" aria-label="Lloji">${tab(null, "Të gjitha")}${tab("inspired", "Parfume")}${tab("active", "Kujdesi i lëkurës")}${tab("known", "Grim")}</nav>
     ${d.items.length ? `<div class="dps">${d.items.map((r) => dupePair(r) + (r.count > 1
       ? `<a class="dp-more" href="/produkt/${esc(r.orig_id)}" data-link>Edhe ${r.count - 1} dupe të tjera për këtë produkt</a>` : "")).join("")}</div>`
       : `<div class="empty"><b>Asnjë dupe këtu ende.</b>Provo një kategori tjetër.</div>`}

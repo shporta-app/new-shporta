@@ -129,8 +129,8 @@ def home():
     for f in featured:
         f["offers"] = offers_for(f["id"])
     cats = {c: n for c, n in db().execute("SELECT cat, COUNT(*) FROM items GROUP BY cat")}
-    top = {k: dupe_list({"kind": k})["items"] for k in ("inspired", "active")}
-    picks = [r for pair in zip(top["inspired"][:6], top["active"][:6]) for r in pair if r["orig_image"]][:8]
+    top = {k: [r for r in dupe_list({"kind": k})["items"] if r["orig_image"]] for k in ("inspired", "active", "known")}
+    picks = [r for trio in zip(top["inspired"][:4], top["known"][:4] or [None] * 4, top["active"][:4]) for r in trio if r][:9]
     return {"stats": stats, "deals": deals, "featured": featured, "impact": impact(), "routine": routine(), "dupes": picks,
             "categories": [{"id": c, "label": label, "count": cats.get(c, 0)} for c, label in CATEGORIES.items()]}
 
@@ -228,9 +228,12 @@ def originals_of(item_id):
 
 def dupe_list(q):
     """One row per expensive product: its best dupe. Newest perfume and skincare finds first by price."""
-    kind = q.get("kind") if q.get("kind") in ("inspired", "active") else None
+    kind = q.get("kind") if q.get("kind") in ("inspired", "active", "known") else None
     page = max(0, int(q.get("page") or 0))
-    where = "WHERE x.save_pct = (SELECT MAX(save_pct) FROM dupes y WHERE y.item_id = x.item_id)" + (" AND x.kind = ?" if kind else "")
+    # one row per expensive product; for a well-known makeup pair, one row per pair (not one per Dior shade)
+    where = ("WHERE x.save_pct = (SELECT MAX(save_pct) FROM dupes y WHERE y.item_id = x.item_id)"
+             " AND (x.kind != 'known' OR x.item_id = (SELECT z.item_id FROM dupes z WHERE z.kind = 'known'"
+             " AND z.reason = x.reason ORDER BY z.orig_price DESC, z.item_id LIMIT 1))" + (" AND x.kind = ?" if kind else ""))
     args = [kind] if kind else []
     total = db().execute(f"SELECT COUNT(DISTINCT x.item_id) {DUPE_FROM} {where}", args).fetchone()[0]
     rows = item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} {where} GROUP BY x.item_id ORDER BY x.orig_price DESC LIMIT ? OFFSET ?",

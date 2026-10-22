@@ -18,7 +18,7 @@ CATEGORIES = [
     ("grim", "Grim",
      r"mascara|maskar|\brimel|lipstick|buzekuq|lip ?gloss|lip ?liner|lip ?tint|foundation|fondatin|\bpudr|\bpowder|"
      r"concealer|korrektor|eyeliner|eye ?liner|eye ?shadow|hije sysh|\bblush|\ballik|bronzer|highlighter|\bprimer|"
-     r"\bbrows?\b|vetull|makeup|make up|\bgrim\b|manikyr|llak thonj|nail polish|\bthonj|cushion|palette|paleta|\blip\b|\blips\b|\bbuzesh|\bbuze\b"),
+     r"\bbrows?\b|vetull|makeup|make up|\bgrim\b|manikyr|llak thonj|nail polish|\bthonj|cushion|palette|paleta|setting spray|fixing spray|setting powder|finishing powder|\blip\b|\blips\b|\bbuzesh|\bbuze\b"),
     ("floke", "Flokë", r"shampo|conditioner|balsam (per )?flok|\bhair\b|\bflok|keratin|ngjyre (per )?flok"),
     ("femije", "Fëmijë",
      r"\bbaby\b|\bbebe|femij|\bkids?\b|\bjunior|foshnj|neonat|teething|\blodr|\btoys?\b|pelena|biberon|oturak|\bpusket"),

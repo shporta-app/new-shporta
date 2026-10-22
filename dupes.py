@@ -16,7 +16,7 @@ import unicodedata
 
 MIN_SAVING = 0.30
 # "expensive things": an original must cost at least this much (lek) to be worth a dupe
-MIN_ORIGINAL = {"parfume": 5000, "lekure": 2000}
+MIN_ORIGINAL = {"parfume": 5000, "lekure": 2000, "grim": 1500}
 NOT_A_PRODUCT = re.compile(r"\b(tester|set|kit|mini|sample|kampion|travel|gift|dhurate)\b")
 
 
@@ -113,6 +113,38 @@ def active_pairs(items):
     return pairs
 
 
+# ---------------------------------------------------------------- makeup: well-known dupe pairs
+
+# Makeup has no evidence in the name (no "inspired by", no active %), so these are dupes the beauty community widely
+# compares. A pair appears only when both products are in our data; add a line when shops start carrying a new dupe.
+# (original must match, original must not match, dupe must match, dupe must not match, dupe's name)
+KNOWN = [
+    (r"better than sex", r"mini|eyeliner|liner|\bset\b|kit", r"lash princess", r"mini|\bset\b", 'Essence Lash Princess'),
+    (r"better than sex", r"mini|eyeliner|liner|\bset\b|kit", r"lash paradise", r"mini|\bset\b|primer", "L'Oréal Lash Paradise"),
+    (r"dior.*lip glow oil", r"mini|\bset\b", r"fat oil lip drip", r"mini|\bset\b", 'NYX Fat Oil Lip Drip'),
+    (r"all nighter.*setting spray", r"mini|vitamin c|\bset\b", r"nyx.*setting spray.*matte|nyx.*matte.*setting spray", r"mini|\bset\b", 'NYX Matte Setting Spray'),
+    # wait for shops to carry the dupe: e.l.f. Halo Glow, Camo Concealer, Poreless Putty, Camo Liquid Blush
+    (r"charlotte tilbury.*flawless filter", r"mini|\bset\b", r"halo glow liquid filter", r"mini|\bset\b", 'e.l.f. Halo Glow Liquid Filter'),
+    (r"shape tape", r"mini|\bset\b|contour", r"camo concealer", r"mini|\bset\b", 'e.l.f. 16HR Camo Concealer'),
+    (r"porefessional", r"mini|\bset\b|powder|matte", r"poreless putty", r"mini|\bset\b", 'e.l.f. Poreless Putty Primer'),
+    (r"rare beauty.*soft pinch liquid blush", r"mini|\bset\b", r"camo liquid blush", r"mini|\bset\b", 'e.l.f. Camo Liquid Blush'),
+]
+
+
+def known_pairs(items):
+    pairs = []
+    makeup = [it for it in items if it["cat"] in ("grim", "lekure")]
+    for orig_rx, orig_not, dupe_rx, dupe_not, dupe_name in KNOWN:
+        origs = [it for it in makeup if re.search(orig_rx, fold(it["title"])) and not re.search(orig_not, fold(it["title"]))]
+        dps = [it for it in makeup if re.search(dupe_rx, fold(it["title"])) and not re.search(dupe_not, fold(it["title"]))]
+        if not origs or not dps:
+            continue
+        for orig in origs:
+            for d in sorted(dps, key=lambda x: (-x["shops"], x["min_price"]))[:2]:  # two shades are enough per original
+                pairs.append((orig, d, "known", f"Dupe i njohur: {dupe_name}"))
+    return pairs
+
+
 # ---------------------------------------------------------------- build
 
 def best_offer(item, offers, target_ml=None):
@@ -132,7 +164,7 @@ def build(con):
     items = [dict(r) for r in con.execute(
         "SELECT id, title, image, cat, shops, min_price, max_price, currency FROM items WHERE currency = 'ALL'")]
     insp, by_item = inspired_pairs(products, items)
-    pairs = insp + active_pairs(items)
+    pairs = insp + active_pairs(items) + known_pairs(items)
 
     rows, seen = [], set()
     for orig, dupe, kind, reason in pairs:
@@ -150,8 +182,10 @@ def build(con):
         d_ml = ml(d["size_val"], d["size_unit"])
         if o_ml and d_ml:
             saving = 1 - (d["price"] / d_ml) / (o["price"] / o_ml)
-        elif o_ml or d_ml:
+        elif (o_ml or d_ml) and kind != "known":
             continue  # one side's size unknown: can't tell if it's really cheaper
+        elif o_ml or d_ml:
+            saving = 1 - d["price"] / o["price"]  # makeup: sizes are similar and rarely stated; compare the price
         else:
             saving = 1 - d["price"] / o["price"]
         if saving < MIN_SAVING or d["price"] >= o["price"] or o["price"] < MIN_ORIGINAL.get(orig["cat"], 2000):
