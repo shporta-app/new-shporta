@@ -3,7 +3,10 @@ services:
     name: new-shporta
     runtime: python
     plan: free
-    buildCommand: "true"
+    # the price data lives on the `data` branch (one commit, replaced nightly); seed/VERSION names the exact commit
+    buildCommand: >-
+      curl -fsSL -o seed/phia-api.db.gz
+      "https://raw.githubusercontent.com/shporta-app/new-shporta/$(head -1 seed/VERSION)/phia-api.db.gz"
     startCommand: python server.py
     healthCheckPath: /api/health
     envVars:

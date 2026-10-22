@@ -1,0 +1,74 @@
+"""Nightly price update: re-collect every shop, rebuild the site's data, publish it.
+
+    python nightly.py              # what the scheduled task runs (02:00)
+    python nightly.py --publish-only   # skip scraping; just rebuild and publish the current data
+
+Publishing keeps the 57 MB data file out of main's history:
+  1. the file goes to the `data` branch as a single commit (force-pushed, so that branch never grows)
+  2. seed/VERSION on main gets that commit's id; pushing it makes Render redeploy, and Render's build
+     downloads exactly that file (see render.yaml). Moving to another host only needs that download step.
+Log: logs/nightly-YYYY-MM-DD.log
+"""
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+HERE = Path(__file__).parent
+SEED = HERE / "seed" / "phia-api.db.gz"
+LOG = HERE / "logs" / f"nightly-{datetime.now():%Y-%m-%d}.log"
+
+
+def log(msg):
+    LOG.parent.mkdir(exist_ok=True)
+    line = f"{datetime.now():%H:%M:%S} {msg}"
+    print(line, flush=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def run(*cmd, check=True):
+    log("$ " + " ".join(cmd))
+    with open(LOG, "a", encoding="utf-8") as f:
+        r = subprocess.run(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                           encoding="utf-8", errors="replace", env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"})
+        f.write(r.stdout)
+    if check and r.returncode:
+        raise SystemExit(f"failed ({r.returncode}): {' '.join(cmd)}")
+    return r.stdout.strip()
+
+
+def stop_local_server():
+    # a local `python server.py` keeps the seed file open, and Windows then refuses to rewrite it
+    run("powershell", "-NoProfile", "-Command",
+        "Get-CimInstance Win32_Process -Filter \"name='python.exe'\" | Where-Object { $_.CommandLine -match 'server.py' } "
+        "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force }", check=False)
+
+
+def publish():
+    day = f"{datetime.now():%Y-%m-%d}"
+    blob = run("git", "hash-object", "-w", str(SEED))
+    tree = subprocess.run(["git", "mktree"], cwd=HERE, input=f"100644 blob {blob}\tphia-api.db.gz\n",
+                          capture_output=True, text=True, check=True).stdout.strip()
+    commit = run("git", "commit-tree", tree, "-m", f"Prices {day}")
+    run("git", "push", "--force", "origin", f"{commit}:refs/heads/data")
+    (HERE / "seed" / "VERSION").write_text(commit + "\n", encoding="utf-8")
+    run("git", "add", "seed/VERSION")
+    run("git", "commit", "-m", f"Prices {day}")
+    run("git", "push", "origin", "HEAD:main")
+    log(f"published data {commit[:10]}; Render redeploys from main")
+
+
+def main():
+    log("nightly start")
+    stop_local_server()
+    if "--publish-only" not in sys.argv:
+        run(sys.executable, "refresh.py", check=False)  # one broken shop must not stop the publish
+    run(sys.executable, "match.py")
+    run(sys.executable, "build_seed.py")
+    publish()
+    log("nightly done")
+
+
+if __name__ == "__main__":
+    main()
