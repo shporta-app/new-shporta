@@ -7,6 +7,6 @@
   "content_scripts": [
     { "matches": ["https://*/*"], "js": ["content.js"], "run_at": "document_idle" }
   ],
-  "host_permissions": ["https://new-shporta.onrender.com/*", "http://127.0.0.1:8787/*"],
+  "host_permissions": ["https://shporta.app/*", "https://new-shporta.onrender.com/*", "http://127.0.0.1:8787/*"],
   "action": { "default_title": "Phia AL" }
 }

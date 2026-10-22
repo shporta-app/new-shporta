@@ -44,7 +44,7 @@ WooCommerce variable products are stored per variant ("… - 50 ml"), not as the
 
 ## Deploy (Render)
 
-The API runs on Render from `render.yaml` (repo `shporta-app/new-shporta`). It serves `seed/phia-api.db.gz`,
+The API runs on Render from `render.yaml` (repo `shporta-app/new-shporta`) at https://shporta.app. It serves `seed/phia-api.db.gz`,
 a compact export of the scrape DB (`python build_seed.py`), so the full `data/phia.db` never leaves this machine.
 To publish fresh prices: `python refresh.py` → `python build_seed.py` → commit `seed/phia-api.db.gz` → push.
 

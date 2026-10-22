@@ -1,6 +1,6 @@
 // Talks to our API. Content scripts can't call it themselves from an https shop page, so they ask us.
 // The hosted API first; the local one (python server.py) when developing.
-const APIS = ["https://new-shporta.onrender.com", "http://127.0.0.1:8787"];
+const APIS = ["https://shporta.app", "https://new-shporta.onrender.com", "http://127.0.0.1:8787"];
 
 async function lookup(product) {
   let lastError;
