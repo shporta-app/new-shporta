@@ -80,6 +80,15 @@ def same_size(a, b):
     return a[0] == b[0] and (a[1] is None or b[1] is None or a[1] == b[1])
 
 
+def size_by_price(price, size_price):
+    """The one size whose typical price this price clearly matches, or None if it's ambiguous."""
+    close = [x for x, ref in size_price.items() if ref / 1.15 <= price <= ref * 1.15]
+    if len(close) != 1:
+        return None
+    far = all(not (ref / 1.35 < price < ref * 1.35) for x, ref in size_price.items() if x != close[0])
+    return close[0] if far else None
+
+
 def main():
     con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
     con.execute("CREATE TABLE IF NOT EXISTS matches (product_id INTEGER PRIMARY KEY, group_id TEXT NOT NULL)")
@@ -135,13 +144,18 @@ def main():
             if s:
                 target = next(x for x in sizes if same_size(s, x))
             elif len(sizes) == 1 and size_shops[sizes[0]] >= 2:
-                # rule 3: a row without a size joins only when 2+ shops agree that the product comes in that size
-                # and its price fits that size; otherwise it may well be the 15 ml of a 50 ml cream
+                # rule 3: a row without a size joins only when every shop that states a size states the same one
+                # (2+ shops), so the product comes in one size. Its price must still be plausible (rule 4's range);
+                # prices of the same product really do vary a lot between shops (1 350 L to 3 325 L, same 75 ml).
                 ref = size_price[sizes[0]]
-                if not (ref / 1.3 <= price_of[pid][0] <= ref * 1.3):
+                if not (ref / 2 <= price_of[pid][0] <= ref * 2):
                     stats["no size, price off"] += 1
                     continue
                 target = sizes[0]
+            elif len(sizes) > 1 and (fit := size_by_price(price_of[pid][0], size_price)):
+                # several sizes exist (15 ml at 880 L, 50 ml at ~1 750 L): a row without a size joins the one size
+                # its price clearly belongs to, within 15% of it and 35%+ away from every other size
+                target = fit
             else:
                 unsized.append((pid, shop))
                 continue
