@@ -48,10 +48,25 @@ black white red blue grey gray pink green brown beige orange yellow purple gold 
 pambuk lesh lekure leather cotton wool denim mini maxi midi long short gjate shkurter
 per me dhe nga pa new ri original classic basic sport sportive
 """.split())
-UNIT = {"ml": "ml", "l": "l", "lt": "l", "g": "g", "gr": "g", "gram": "g", "kg": "kg", "oz": "oz", "fl": "oz",
-        "caps": "caps", "kapsula": "caps", "tab": "tab", "tableta": "tab"}
-SIZE_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(ml|lt|l|gr|gram|g|kg|fl\.?\s*oz|oz|caps|kapsula|tableta|tab)\b")
+UNIT = {"ml": "ml", "l": "l", "lt": "l", "g": "g", "gr": "g", "gram": "g", "kg": "kg", "oz": "oz", "fl": "oz"}
+SIZE_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(ml|lt|l|gr|gram|g|kg|fl\.?\s*oz|oz)\b")
+# pack counts: "30 Tablets", "*30KAPS", "60 capsules", "20 bustina" are the size of supplements and wipes
+COUNT_RE = re.compile(r"(\d{1,4})\s*(tablets?|tableta|tabs?|caps(ules?)?|kapsula|kaps|softgels?|sachets?|bustina|"
+                      r"ampula|ampoules?|cope|pcs|pieces|wipes|letra)\b")
 BARE_SIZE_RE = re.compile(r"\s[-–]\s*(\d{1,4})\s*$")  # "Cream - 50" (variant title without a unit)
+# shop labels around the size ("vëllimi: 236 ml", "Masa: 100 ML", "50 ml x 1")
+LABELS_RE = re.compile(r"\b(vellimi|volumi|masa|madhesia|sasia|size|volume|format|permbajtja)\b\s*:?|\bx\s*1\b|\b1\s*x\b")
+# the same word in Albanian and English, or spelled two ways
+SAME = {"krem": "cream", "creme": "cream", "kremi": "cream", "shampo": "shampoo", "shampon": "shampoo", "xhel": "gel",
+        "locion": "lotion", "maske": "mask", "masque": "mask", "ampula": "ampoule", "shkume": "foam", "mousse": "foam",
+        "serumi": "serum", "tonik": "toner", "moisturiser": "moisturizer", "moisturising": "moisturizing",
+        "hidratues": "moisturizing", "pastrues": "cleanser", "balsam": "conditioner", "vaj": "oil"}
+CLOTHING_SIZES = {"s", "m", "l", "xs", "xl", "xxl", "xxxl", "2xl", "3xl"}
+# words shops add or leave out for the same product: "CeraVe Hydrating (Facial) Cleanser", "(Women)" on a perfume
+NOISE = {"facial", "natural", "original", "new", "korean", "official", "authentic", "genuine"}
+PERFUME_WORDS = {"eau", "parfum", "toilette", "edp", "edt", "extrait", "cologne", "perfume", "parfume"}
+# gender labels shops add after a perfume's name ("(Women)", "për femra"); words inside names stay (Uomo, Homme, Men)
+GENDER_LABEL_RE = re.compile(r"\((women|woman|men|man|unisex|femra|meshkuj|for (wo)?men)\)|\bper (femra|meshkuj)\b|\(?unisex\)?")
 
 
 def fold(s):
@@ -60,19 +75,39 @@ def fold(s):
 
 
 def parse(title):
-    t = fold(title)
+    t = LABELS_RE.sub(" ", fold(title))
+    if any(w in t for w in PERFUME_WORDS) or "(" in t:
+        t = GENDER_LABEL_RE.sub(" ", t)
+    # "Eau de Parfum" = "EDP"; a leading "Parfum" ("Parfum Tom Ford Noir Extreme") only says it's a perfume.
+    # A later "Parfum" is a concentration (Sauvage Parfum is not Sauvage EDP) and stays.
+    t = t.replace("eau de parfum", " edp ").replace("eau de toilette", " edt ").replace("extrait de parfum", " extrait ")
+    t = re.sub(r"^[\s\W]*(parfume|parfum|perfume)\s+((per|for) (femra|meshkuj|women|men)\s+)?", " ", t)
     size = None
-    m = SIZE_RE.search(t)
-    if m:
-        u = m.group(2)
-        size = (float(m.group(1).replace(",", ".")), "oz" if "oz" in u else UNIT.get(u, u))
-        t = t[: m.start()] + " " + t[m.end():]
-    else:
+    sizes = list(SIZE_RE.finditer(t))
+    if sizes:
+        u = sizes[0].group(2)
+        size = (float(sizes[0].group(1).replace(",", ".")), "oz" if "oz" in u else UNIT.get(u, u))
+        t = SIZE_RE.sub(" ", t)  # every mention: "Effaclar K+ 40 ml - 40 ml"
+    counts = list(COUNT_RE.finditer(t))
+    if counts:
+        if not size:
+            size = (float(counts[0].group(1)), "pcs")
+        t = COUNT_RE.sub(" ", t)
+    if not size:
         b = BARE_SIZE_RE.search(t)
         if b:
             size = (float(b.group(1)), None)
             t = t[: b.start()]
-    words = {w for w in re.findall(r"[a-z0-9%]+", t) if w not in STOP and not (len(w) == 1 and not w.isdigit())}
+    words = set()
+    for w in re.findall(r"[a-z0-9%+]+", t):
+        plus = w.endswith("+") and len(w.strip("+")) > 0
+        w = w.strip("+")
+        w = SAME.get(w, w) + ("+" if plus else "")  # "k+" stays, a lone "+" goes
+        # single letters are kept ("Effaclar H" vs "Effaclar K+", "Vitamin C"); clothing sizes are not
+        if not w or w in STOP or w in CLOTHING_SIZES:
+            continue
+        words.add(w)
+    words -= NOISE
     return " ".join(sorted(words)), size
 
 
@@ -164,7 +199,10 @@ def main():
         # rows that state no size can still be compared with each other when their prices agree closely
         if len({shop for _, shop in unsized}) >= 2:
             ps = [price_of[pid][0] for pid, _ in unsized]
-            if max(ps) <= min(ps) * 1.25:
+            # a long, specific name ("Pharmaceris Emotopic Emollient Barrier Cream") tolerates the price spread
+            # shops really have; a short one must agree closely
+            spread = 1.4 if len(key.split()) >= 4 else 1.25
+            if max(ps) <= min(ps) * spread:
                 gid = hashlib.md5(f"{key}|unknown".encode()).hexdigest()[:12]
                 rows.extend((pid, gid) for pid, _ in unsized)
             else:
