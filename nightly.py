@@ -48,8 +48,9 @@ def stop_local_server():
 def publish():
     day = f"{datetime.now():%Y-%m-%d}"
     blob = run("git", "hash-object", "-w", str(SEED))
-    tree = subprocess.run(["git", "mktree"], cwd=HERE, input=f"100644 blob {blob}\tphia-api.db.gz\n",
-                          capture_output=True, text=True, check=True).stdout.strip()
+    # bytes, not text: on Windows text mode would write "\r\n" and the file would be named "phia-api.db.gz\r"
+    tree = subprocess.run(["git", "mktree"], cwd=HERE, input=f"100644 blob {blob}\tphia-api.db.gz\n".encode(),
+                          capture_output=True, check=True).stdout.decode().strip()
     commit = run("git", "commit-tree", tree, "-m", f"Prices {day}")
     run("git", "push", "--force", "origin", f"{commit}:refs/heads/data")
     (HERE / "seed" / "VERSION").write_text(commit + "\n", encoding="utf-8")
