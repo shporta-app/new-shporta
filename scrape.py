@@ -90,6 +90,21 @@ class Client:
             raise Blocked(f"{r.status_code} / bot challenge at {url}")
         return r
 
+    def post(self, url, **kw):
+        """Same rules as get(): robots.txt check, Crawl-delay, stop on 403/429/challenge."""
+        if not url.startswith("http"):
+            url = self.base + url
+        if not self.allowed(url):
+            raise Blocked(f"robots.txt disallows {url}")
+        wait = self._last + self.delay - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last = time.monotonic()
+        r = self.s.post(url, timeout=30, **kw)
+        if r.status_code in (403, 429) or re.search(r"<title>Just a moment|cf-chl-opt|safeline", r.text[:5000], re.I):
+            raise Blocked(f"{r.status_code} / bot challenge at {url}")
+        return r
+
 
 def num(v):
     if v in (None, ""):

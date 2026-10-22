@@ -1,34 +1,40 @@
-"""API (and a small search page) over the compact DB from build_seed.py.
+"""Website + API over the compact DB from build_seed.py.
 
     python server.py            -> http://localhost:8787 (Render sets PORT)
 
-GET  /                      search page
-GET  /api/search?q=...      products whose title contains all words, grouped per product
-GET  /api/health
-POST /api/lookup  {"title","price","currency","url"}
-     -> the same product in our shops (name + size match), a price verdict, and similar products when
-        there's no exact match (e.g. a Zara page: we hold no Zara data, the shopper's own page supplies it)
+Pages are a small single-page app in web/ (index.html, app.js, styles.css). API:
+GET  /api/home                      stats, a featured comparison, biggest price gaps, categories
+GET  /api/category/<cat>?sort=&shop=&compared=&page=
+GET  /api/item/<id>                 every shop's offer for one product, plus similar products
+GET  /api/search?q=&page=
+GET  /api/shops
+POST /api/lookup  {"title","price","currency","url"}   (browser extension)
 
 Standard library only. All lookups are SQL against a read-only file, so memory stays small (Render free: 512 MB).
 """
+import ast
 import collections
 import gzip
 import json
+import mimetypes
 import os
 import re
 import shutil
 import sqlite3
 import statistics
 import threading
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from match import parse, same_size
 
 HERE = Path(__file__).parent
+WEB = HERE / "web"
 PORT = int(os.environ.get("PORT", 8787))
 DB_FILE = HERE / "seed" / "phia-api.db"
+PAGE_SIZE = 30
 
 
 def ensure_db():
@@ -50,7 +56,19 @@ def db():
     return _local.con
 
 
-COLS = "id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit"
+def meta(key):
+    r = db().execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return r[0] if r else None
+
+
+CATEGORIES = dict(ast.literal_eval(meta("categories") or "[]"))
+COLS = "id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id"
+ITEM_COLS = "id, title, image, cat, shops, in_stock_shops, min_price, max_price, currency, save_pct"
+
+
+def fold(s):
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
 
 
 def one_per_shop(offers):
@@ -73,8 +91,118 @@ def verdict(price, currency, offers):
 
 
 def public(o):
-    return {k: o[k] for k in ("shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")}
+    return {k: o[k] for k in ("shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
+            if k in o.keys()} | ({"item": o["item_id"]} if "item_id" in o.keys() else {})
 
+
+def item_rows(sql, args):
+    return [dict(r) for r in db().execute(sql, args)]
+
+
+# ------------------------------------------------------------------ site endpoints
+
+def home():
+    stats = {
+        "offers": db().execute("SELECT COUNT(*) FROM products").fetchone()[0],
+        "shops": db().execute("SELECT COUNT(*) FROM shops").fetchone()[0],
+        "compared": db().execute("SELECT COUNT(*) FROM items WHERE shops >= 2").fetchone()[0],
+        "updated": meta("updated"),
+    }
+    # deals: the same product, in stock in 3+ shops, with a real gap (very large gaps are usually a mismatch)
+    pool = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE in_stock_shops >= 3 AND currency = 'ALL' AND cat != 'tjeter'
+                         AND save_pct BETWEEN 15 AND 65 AND image IS NOT NULL
+                         ORDER BY save_pct * min(in_stock_shops, 6) DESC LIMIT 400""", ())
+    # at most two per brand (first word of the name) and four per category, so the list isn't one brand
+    deals, per_brand, per_cat = [], collections.Counter(), collections.Counter()
+    for d in pool:
+        brand = fold(d["title"]).split()[0] if d["title"].strip() else ""
+        if per_brand[brand] < 2 and per_cat[d["cat"]] < 4:
+            per_brand[brand] += 1
+            per_cat[d["cat"]] += 1
+            deals.append(d)
+        if len(deals) == 24:
+            break
+    featured = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE in_stock_shops >= 5 AND currency = 'ALL' AND cat != 'tjeter'
+                             AND save_pct BETWEEN 20 AND 60 AND image IS NOT NULL
+                             ORDER BY in_stock_shops DESC, save_pct DESC LIMIT 12""", ())
+    for f in featured:
+        f["offers"] = offers_for(f["id"])
+    cats = {c: n for c, n in db().execute("SELECT cat, COUNT(*) FROM items GROUP BY cat")}
+    return {"stats": stats, "deals": deals, "featured": featured,
+            "categories": [{"id": c, "label": label, "count": cats.get(c, 0)} for c, label in CATEGORIES.items()]}
+
+
+def offers_for(item_id):
+    offs = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ?", (item_id,))]
+    if item_id.startswith("g"):
+        return [public(o) for o in one_per_shop(offs)]
+    # a single shop's page: list its sizes/colours
+    return [public(o) for o in sorted(offs, key=lambda o: (not o["in_stock"], o["price"]))]
+
+
+SORTS = {"compared": "shops DESC, save_pct DESC", "cheap": "min_price ASC", "dear": "min_price DESC", "gap": "save_pct DESC"}
+
+
+def category(cat, q):
+    if cat not in CATEGORIES and cat != "tjeter":
+        return None
+    where, args = ["cat = ?"], [cat]
+    if q.get("compared") == "1":
+        where.append("shops >= 2")
+    if q.get("shop"):
+        where.append("id IN (SELECT item_id FROM products WHERE shop = ?)")
+        args.append(q["shop"])
+    order = SORTS.get(q.get("sort"), SORTS["compared"])
+    page = max(0, int(q.get("page") or 0))
+    sql = " AND ".join(where)
+    total = db().execute(f"SELECT COUNT(*) FROM items WHERE {sql}", args).fetchone()[0]
+    items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {sql} ORDER BY {order} LIMIT ? OFFSET ?",
+                      args + [PAGE_SIZE, page * PAGE_SIZE])
+    shops = [r[0] for r in db().execute(
+        "SELECT shop FROM products WHERE cat = ? GROUP BY shop ORDER BY COUNT(*) DESC LIMIT 40", (cat,))]
+    return {"id": cat, "label": CATEGORIES.get(cat, "Të tjera"), "total": total, "page": page,
+            "page_size": PAGE_SIZE, "items": items, "shops": shops}
+
+
+def item(item_id):
+    r = db().execute(f"SELECT {ITEM_COLS} FROM items WHERE id = ?", (item_id,)).fetchone()
+    if not r:
+        return None
+    it = dict(r)
+    it["offers"] = offers_for(item_id)
+    first = db().execute("SELECT name_key FROM products WHERE item_id = ? LIMIT 1", (item_id,)).fetchone()
+    cur = it["currency"]
+    sim = similar(first[0] if first else "", it["min_price"], cur, limit=12)
+    seen, out = {item_id}, []
+    for o in sim:
+        if o["item_id"] not in seen:
+            seen.add(o["item_id"])
+            out.append(o["item_id"])
+    it["similar"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(out))})", out) if out else []
+    it["category_label"] = CATEGORIES.get(it["cat"], "Të tjera")
+    return it
+
+
+def search(q, page=0):
+    words = [w for w in re.findall(r"\w+", fold(q)) if len(w) > 1][:6]
+    if not words:
+        return {"q": q, "total": 0, "items": []}
+    where = " AND ".join("search LIKE ?" for _ in words)
+    args = [f"%{w}%" for w in words]
+    total = db().execute(f"SELECT COUNT(*) FROM items WHERE {where}", args).fetchone()[0]
+    items = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE {where}
+                          ORDER BY shops DESC, in_stock_shops DESC, min_price LIMIT ? OFFSET ?""",
+                      args + [PAGE_SIZE, page * PAGE_SIZE])
+    return {"q": q, "total": total, "page": page, "page_size": PAGE_SIZE, "items": items}
+
+
+def shops():
+    rows = db().execute("""SELECT s.domain, s.category, COUNT(p.id) n
+                           FROM shops s LEFT JOIN products p ON p.shop = s.domain GROUP BY s.domain ORDER BY n DESC""")
+    return [{"domain": d, "category": c, "products": n} for d, c, n in rows]
+
+
+# ------------------------------------------------------------------ extension endpoint
 
 def lookup(title, price=None, currency="ALL", url=""):
     key, size = parse(title or "")
@@ -111,7 +239,7 @@ for _g in SYNONYMS:
 
 
 def similar(key, price, currency, limit=8):
-    """Products covering most of the page title's words (in either language), cheaper ones first."""
+    """Products covering most of the title's words (in either language), cheaper ones first."""
     q = [w for w in set(key.split()) if re.fullmatch(r"[a-z0-9]+", w)]
     if len(q) < 2:
         return []
@@ -143,31 +271,18 @@ def similar(key, price, currency, limit=8):
     return res[:limit]
 
 
-def search(q, limit=40):
-    words = [w for w in re.findall(r"\w+", q.lower()) if len(w) > 1][:6]
-    if not words:
-        return []
-    sql = f"SELECT {COLS} FROM products WHERE " + " AND ".join("lower(title) LIKE ?" for _ in words) + " LIMIT 400"
-    grouped = collections.defaultdict(list)
-    for r in db().execute(sql, [f"%{w}%" for w in words]):
-        o = dict(r)
-        grouped[(o["name_key"], o["size_val"])].append(o)
-    out = [{"name": max((o["title"] for o in v), key=len), "offers": [public(o) for o in one_per_shop(v)]} for v in grouped.values()]
-    out.sort(key=lambda g: -len(g["offers"]))
-    return out[:limit]
-
-
-PAGE = (HERE / "web" / "index.html")
-
+# ------------------------------------------------------------------ HTTP
 
 class Handler(BaseHTTPRequestHandler):
-    def _send(self, code, body, ctype="application/json; charset=utf-8"):
+    def _send(self, code, body, ctype="application/json; charset=utf-8", cache=None):
         if not isinstance(body, bytes):
             body = json.dumps(body, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        if cache:
+            self.send_header("Cache-Control", cache)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -177,14 +292,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path)
-        if u.path == "/":
-            return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
-        if u.path == "/api/search":
-            return self._send(200, search(parse_qs(u.query).get("q", [""])[0]))
-        if u.path == "/api/health":
-            n = db().execute("SELECT COUNT(*) FROM products").fetchone()[0]
-            return self._send(200, {"ok": True, "products": n})
-        self._send(404, {"error": "not found"})
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        path = unquote(u.path)
+        try:
+            if path == "/api/health":
+                return self._send(200, {"ok": True, "offers": db().execute("SELECT COUNT(*) FROM products").fetchone()[0]})
+            if path == "/api/home":
+                return self._send(200, home(), cache="public, max-age=600")
+            if path.startswith("/api/category/"):
+                res = category(path.rsplit("/", 1)[1], q)
+                return self._send(200 if res else 404, res or {"error": "Kjo kategori nuk ekziston."})
+            if path.startswith("/api/item/"):
+                res = item(path.rsplit("/", 1)[1])
+                return self._send(200 if res else 404, res or {"error": "Ky produkt nuk u gjet."})
+            if path == "/api/search":
+                return self._send(200, search(q.get("q", ""), max(0, int(q.get("page") or 0))))
+            if path == "/api/shops":
+                return self._send(200, shops(), cache="public, max-age=3600")
+        except (ValueError, sqlite3.Error) as e:
+            return self._send(400, {"error": str(e)})
+        # static files; anything else is a page of the single-page app
+        f = (WEB / path.lstrip("/")).resolve()
+        if path != "/" and f.is_file() and WEB.resolve() in f.parents:
+            ctype = mimetypes.guess_type(str(f))[0] or "application/octet-stream"
+            return self._send(200, f.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text") or ctype.endswith("javascript") else ""),
+                              cache="public, max-age=300")
+        if path.startswith("/api/"):
+            return self._send(404, {"error": "not found"})
+        return self._send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8")
 
     def do_POST(self):
         if urlparse(self.path).path != "/api/lookup":

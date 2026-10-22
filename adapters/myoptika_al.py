@@ -2,7 +2,7 @@
 SQLite write lock is only held briefly (see _phia_common.py).
 
 Polite mode (the shop answered 429 before): at least 8 s between requests. On a 429 we honour Retry-After
-(or wait 10 minutes) and retry the same URL once; the second 429 of a run stops for good (shop stays blocked).
+(MAX_429 = 1: the first 429 of a run stops for good and the shop is recorded as blocked; no retry).
 Any 403 or bot challenge stops immediately. Retry-After is read from a requests response hook, so every fetch
 still goes through client.get (robots.txt, UA, delay)."""
 import importlib.util
@@ -15,7 +15,7 @@ _spec.loader.exec_module(C)
 
 MIN_DELAY = 8.0
 DEFAULT_WAIT = 600
-MAX_429 = 2  # the second 429 in a run ends it
+MAX_429 = 1  # any 429 ends the run (project rule: stop on 403/429, no retry)
 
 
 def _polite(client):
@@ -51,4 +51,4 @@ def scrape(client, max_pages):
     sm = "https://myoptika.al/sitemap.xml"
     yield from C.jsonld_from(client, max_pages, [sm])
     if state.get("stopped"):  # scrape.sitemap_urls swallows Blocked; surface it so the shop is recorded as blocked
-        raise C.S.Blocked(f"429 twice this run (last at {state['stopped']}); stopped for good")
+        raise C.S.Blocked(f"429 this run (at {state['stopped']}); stopped for good")

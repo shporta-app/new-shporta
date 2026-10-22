@@ -149,3 +149,8 @@ hotshot.al
 aksesore.al
 sportreality.al
 argjend-ora.com
+# gaps (agent)
+multibrand.al
+inglot.al
+lente.al
+# pierrecardin.al (Shopify; homepage answered 429 to probe -> blocked, not retried)

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <mask id="m-holes" maskUnits="userSpaceOnUse" x="-512" y="-512" width="2048" height="2048">
+      <rect x="-512" y="-512" width="2048" height="2048" fill="#fff"/>
+      <ellipse rx="34" ry="34" fill="#000" transform="translate(0 0) rotate(0 512 512) translate(512 512) scale(1) translate(-512 -512) translate(-44 -74) rotate(-24 512 512) scale(0.94) translate(31 31) translate(318 512)"/><ellipse rx="34" ry="34" fill="#000" transform="translate(0 0) rotate(0 512 512) translate(512 512) scale(1) translate(-512 -512) translate(64 94) rotate(18 512 512) scale(0.94) translate(31 31) translate(318 512)"/>
+    </mask>
+    <clipPath id="m-a"><path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(0 0) rotate(0 512 512) translate(512 512) scale(1) translate(-512 -512) translate(-44 -74) rotate(-24 512 512) scale(0.94) translate(31 31)"/></clipPath>
+  </defs>
+  <g transform="translate(-11 2)">
+    <g mask="url(#m-holes)">
+      <path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(0 0) rotate(0 512 512) translate(512 512) scale(1) translate(-512 -512) translate(64 94) rotate(18 512 512) scale(0.94) translate(31 31)" fill="#7B4DFF"/>
+      <path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(0 0) rotate(0 512 512) translate(512 512) scale(1) translate(-512 -512) translate(-44 -74) rotate(-24 512 512) scale(0.94) translate(31 31)" fill="#C6F432"/>
+      <g clip-path="url(#m-a)"><path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(0 0) rotate(0 512 512) translate(512 512) scale(1) translate(-512 -512) translate(64 94) rotate(18 512 512) scale(0.94) translate(31 31)" fill="#FFFFFF"/></g>
+    </g>
+  </g></svg>

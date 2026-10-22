@@ -1,0 +1,328 @@
+// shporta: a small single-page app over /api. Pages: home, category, product, search, shops, extension.
+const main = document.getElementById("main");
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const lek = (n, cur = "ALL") =>
+  cur === "EUR" ? "€" + Number(n).toFixed(2) : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L";
+const shopName = (d) => String(d || "").replace(/^www\./, "");
+const plural = (n, one, many) => `${n.toLocaleString("en").replace(/,/g, " ")} ${n === 1 ? one : many}`;
+const img = (src, alt = "") =>
+  src ? `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'noimg',textContent:'Pa foto'}))">`
+      : `<span class="noimg">Pa foto</span>`;
+
+async function api(path) {
+  const r = await fetch(path);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(data.error || `Gabim ${r.status}`), { status: r.status });
+  return data;
+}
+
+/* ---------- shared pieces ---------- */
+
+// One product, every shop's price: a bar per shop ending in a price tag; the cheapest in-stock one is lime.
+function ruler(item, { heading = "h3", animate = false, linkHead = true, showHead = true } = {}) {
+  const offers = (item.offers || []).filter((o) => o.currency === item.currency);
+  if (!offers.length) return "";
+  const max = Math.max(...offers.map((o) => o.price));
+  const live = offers.filter((o) => o.in_stock);
+  const best = live.length ? Math.min(...live.map((o) => o.price)) : null;
+  const rows = offers.slice(0, 10).map((o, i) => {
+    const w = Math.max(12, (o.price / max) * 100).toFixed(1);
+    const cls = [o.in_stock && o.price === best ? "best" : "", o.in_stock ? "" : "out"].join(" ");
+    return `<li class="${cls}" style="--i:${i}">
+      <span class="shop" title="${esc(shopName(o.shop))}">${esc(shopName(o.shop))}</span>
+      <span class="track"><span class="bar" style="--w:${w}%"></span>
+        <a class="tag" style="--w:${w}%" href="${esc(o.url)}" target="_blank" rel="noopener"
+           aria-label="${esc(shopName(o.shop))}: ${lek(o.price, o.currency)}${o.in_stock ? "" : ", s'ka gjendje"}">${lek(o.price, o.currency)}</a></span>
+    </li>`;
+  }).join("");
+  const head = `${img(item.image, item.title)}<div><${heading}>${esc(item.title)}</${heading}>
+      <small>${plural(offers.length, "dyqan", "dyqane")}${item.save_pct ? `, diferencë deri ${item.save_pct}%` : ""}</small></div>`;
+  return `<div class="ruler${animate ? " animate" : ""}">
+    ${!showHead ? "" : linkHead ? `<a class="ruler-head" href="/produkt/${esc(item.id)}" data-link>${head}</a>` : `<div class="ruler-head">${head}</div>`}
+    <ol>${rows}</ol>
+  </div>`;
+}
+
+function tile(it) {
+  const range = it.shops > 1 && it.max_price > it.min_price
+    ? `<small>deri ${lek(it.max_price, it.currency)}</small>` : "";
+  return `<a class="tile" href="/produkt/${esc(it.id)}" data-link>
+    <span class="pic">${img(it.image, it.title)}</span>
+    ${it.shops > 1 ? `<span class="chip">${plural(it.shops, "dyqan", "dyqane")}</span>` : ""}
+    <span class="name">${esc(it.title)}</span>
+    <span class="meta"><span class="num">${it.shops > 1 ? "nga " : ""}${lek(it.min_price, it.currency)}</span>${range}</span>
+  </a>`;
+}
+
+function deal(it) {
+  return `<a class="deal" href="/produkt/${esc(it.id)}" data-link>
+    ${img(it.image, it.title)}
+    <span><span class="name">${esc(it.title)}</span>
+      <span class="range">${lek(it.min_price)} deri ${lek(it.max_price)} në ${plural(it.in_stock_shops, "dyqan", "dyqane")}</span></span>
+    <span class="save">−${it.save_pct}%</span>
+  </a>`;
+}
+
+function pager(data, base) {
+  const pages = Math.ceil(data.total / data.page_size);
+  if (pages <= 1) return "";
+  const link = (p, label) => {
+    const u = new URL(base, location.origin);
+    u.searchParams.set("page", p);
+    return `<a class="btn btn-ghost" href="${u.pathname}${u.search}" data-link>${label}</a>`;
+  };
+  return `<nav class="pager" aria-label="Faqet">
+    ${data.page > 0 ? link(data.page - 1, "Më parë") : ""}
+    <span>Faqja ${data.page + 1} nga ${pages}</span>
+    ${data.page + 1 < pages ? link(data.page + 1, "Më tej") : ""}
+  </nav>`;
+}
+
+const searchForm = (id, value = "") => `<form class="hero-search" role="search" data-search>
+    <label class="sr" for="${id}">Kërko produkt</label>
+    <input id="${id}" name="q" type="search" value="${esc(value)}" placeholder="p.sh. cerave, 345 relief cream, atlete nike">
+    <button class="btn" type="submit">Kërko</button>
+  </form>`;
+
+/* ---------- pages ---------- */
+
+let homeCache;
+async function pageHome() {
+  const d = homeCache || (homeCache = await api("/api/home"));
+  const s = d.stats;
+  setFoot(s.updated);
+  let fi = Math.floor(Math.random() * Math.max(1, d.featured.length));
+  main.innerHTML = `
+  <section class="hero"><div class="wrap hero-in">
+    <div>
+      <h1>i njëjti produkt, çmime të ndryshme</h1>
+      <p>Shiko sa kushton një produkt në çdo dyqan online në Shqipëri, para se ta blesh. Kozmetikë, parfume, veshje, këpucë dhe aksesorë.</p>
+      ${searchForm("q-hero")}
+      <div class="hero-stats">
+        <span><b class="num">${s.offers.toLocaleString("en").replace(/,/g, " ")}</b>çmime</span>
+        <span><b class="num">${s.shops}</b>dyqane online</span>
+        <span><b class="num">${s.compared.toLocaleString("en").replace(/,/g, " ")}</b>produkte në 2+ dyqane</span>
+      </div>
+    </div>
+    <div id="featured">${d.featured.length ? ruler(d.featured[fi], { animate: true }) : ""}
+      ${d.featured.length > 1 ? `<div class="ruler-foot"><span>Të dhëna reale nga dyqanet</span><button type="button" id="next">Një produkt tjetër</button></div>` : ""}
+    </div>
+  </div></section>
+
+  <section class="section"><div class="wrap">
+    <div class="section-head"><h2>diferencat më të mëdha tani</h2></div>
+    <p class="lead">I njëjti produkt, në stok në të paktën tre dyqane. Përqindja tregon sa më lirë është te dyqani më i lirë.</p>
+    <div class="deals">${d.deals.map(deal).join("")}</div>
+  </div></section>
+
+  <section class="section"><div class="wrap">
+    <h2>kategoritë</h2>
+    <p class="lead">Çdo produkt që gjetëm, i renditur sipas llojit.</p>
+    <div class="cats">${d.categories.filter((c) => c.count).map((c) =>
+      `<a href="/kategori/${c.id}" data-link>${esc(c.label)}<span>${c.count.toLocaleString("en").replace(/,/g, " ")}</span></a>`).join("")}</div>
+  </div></section>
+
+  <section class="section"><div class="wrap">
+    <div class="band">
+      <div><h2>kontrollo çmimin kudo që blen</h2>
+        <p>Shtesa e shportës për shfletuesin hapet vetë kur shikon një produkt në një dyqan online dhe të tregon nëse çmimi është i mirë, normal apo i lartë, dhe ku e gjen më lirë.</p>
+        <a class="btn" href="/shtesa" data-link>Si ta instalosh</a></div>
+      <ol><li>Hap një produkt në çdo dyqan online, edhe në Zara apo Mango.</li>
+        <li>Shporta krahason çmimin me dyqanet e tjera.</li>
+        <li>Blej aty ku është më lirë.</li></ol>
+    </div>
+  </div></section>`;
+  const next = document.getElementById("next");
+  if (next) next.onclick = () => {
+    fi = (fi + 1) % d.featured.length;
+    document.querySelector("#featured .ruler").outerHTML = ruler(d.featured[fi], { animate: true });
+  };
+}
+
+async function pageCategories() {
+  const d = homeCache || (homeCache = await api("/api/home"));
+  main.innerHTML = `<div class="wrap"><div class="page-head"><h1>kategoritë</h1>
+    <p>${plural(d.stats.compared, "produkt", "produkte")} gjenden në më shumë se një dyqan.</p></div>
+    <div class="section" style="padding-top:20px"><div class="cats">${d.categories.filter((c) => c.count).map((c) =>
+      `<a href="/kategori/${c.id}" data-link>${esc(c.label)}<span>${c.count.toLocaleString("en").replace(/,/g, " ")}</span></a>`).join("")}
+      <a href="/kategori/tjeter" data-link>Të tjera<span></span></a></div></div></div>`;
+}
+
+async function pageCategory(cat, params) {
+  const q = new URLSearchParams(params);
+  const d = await api(`/api/category/${encodeURIComponent(cat)}?${q}`);
+  document.title = `${d.label}: krahaso çmimet | shporta`;
+  const opt = (v, label, cur) => `<option value="${esc(v)}" ${cur === v ? "selected" : ""}>${esc(label)}</option>`;
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head"><div class="crumbs"><a href="/kategorite" data-link>Kategoritë</a></div>
+      <h1>${esc(d.label)}</h1><p>${plural(d.total, "produkt", "produkte")}</p></div>
+    <form class="filters" id="filters">
+      <label>Rendit <select name="sort">
+        ${opt("compared", "Në më shumë dyqane", q.get("sort") || "compared")}${opt("gap", "Diferenca më e madhe", q.get("sort"))}
+        ${opt("cheap", "Më të lirat", q.get("sort"))}${opt("dear", "Më të shtrenjtat", q.get("sort"))}</select></label>
+      <label>Dyqani <select name="shop"><option value="">Të gjitha</option>${d.shops.map((s) => opt(s, shopName(s), q.get("shop"))).join("")}</select></label>
+      <label><input type="checkbox" name="compared" value="1" ${q.get("compared") === "1" ? "checked" : ""}> Vetëm në 2+ dyqane</label>
+    </form>
+    ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
+      : `<div class="empty"><b>Asnjë produkt me këto filtra.</b>Hiq një filtër ose zgjidh një dyqan tjetër.</div>`}
+    ${pager(d, location.pathname + location.search)}
+  </div>`;
+  document.getElementById("filters").onchange = (e) => {
+    const f = new FormData(e.currentTarget);
+    const p = new URLSearchParams();
+    for (const [k, v] of f) if (v) p.set(k, v);
+    go(`/kategori/${cat}?${p}`);
+  };
+}
+
+async function pageItem(id) {
+  const it = await api(`/api/item/${encodeURIComponent(id)}`);
+  document.title = `${it.title}: çmimet në ${it.offers.length} dyqane | shporta`;
+  const live = it.offers.filter((o) => o.in_stock && o.currency === it.currency);
+  const prices = live.map((o) => o.price);
+  const lo = prices.length ? Math.min(...prices) : it.min_price;
+  const hi = prices.length ? Math.max(...prices) : it.max_price;
+  const multiShop = new Set(it.offers.map((o) => o.shop)).size > 1;
+  const rows = it.offers.map((o) => `<tr class="${o.in_stock ? "" : "out"}">
+      <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
+      <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}</td>
+      <td>${o.in_stock ? "Në stok" : "S'ka gjendje"}</td>
+      <td><a class="btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}" href="${esc(o.url)}" target="_blank" rel="noopener">Hape në dyqan</a></td>
+    </tr>`).join("");
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head" style="padding-bottom:18px"><div class="crumbs"><a href="/kategori/${esc(it.cat)}" data-link>${esc(it.category_label)}</a></div></div>
+    <div class="product">
+      <div class="pic">${img(it.image, it.title)}</div>
+      <div>
+        <h1>${esc(it.title)}</h1>
+        <div class="summary">
+          <div class="low">Më i liri<b>${lek(lo, it.currency)}</b></div>
+          ${multiShop && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
+          <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
+        </div>
+        ${multiShop ? ruler(it, { showHead: false, animate: true }) : ""}
+        <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>Gjendja</th><th></th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        <p class="note">${multiShop
+          ? "I bashkuam këto oferta sipas emrit dhe madhësisë së produktit. Kontrollo madhësinë dhe ngjyrën te dyqani para se të blesh."
+          : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}</p>
+      </div>
+    </div>
+    ${it.similar.length ? `<section class="section"><h2>produkte të ngjashme</h2><p class="lead">Nga dyqane të tjera, më të lirat së pari.</p>
+      <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
+  </div>`;
+}
+
+async function pageSearch(params) {
+  const q = new URLSearchParams(params);
+  const term = q.get("q") || "";
+  document.querySelectorAll('input[name="q"]').forEach((i) => (i.value = term));
+  if (!term.trim()) {
+    main.innerHTML = `<div class="wrap"><div class="page-head"><h1>kërko</h1></div>${searchForm("q-page")}</div>`;
+    return;
+  }
+  const d = await api(`/api/search?${q}`);
+  document.title = `${term}: kërkimi | shporta`;
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head"><h1>${esc(term)}</h1><p>${plural(d.total, "produkt", "produkte")}. Ato në më shumë dyqane dalin të parat.</p></div>
+    <div style="height:22px"></div>
+    ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
+      : `<div class="empty"><b>Nuk gjetëm "${esc(term)}".</b>Provo një fjalë më të shkurtër, emrin e markës, ose shkruaje pa ë dhe ç.</div>`}
+    ${pager(d, location.pathname + location.search)}
+  </div>`;
+}
+
+const SHOP_GROUPS = { beauty: "Kozmetikë dhe farmaci", perfume: "Parfume", clothing: "Veshje", shoes: "Këpucë",
+  accessories: "Aksesorë dhe syze", jewelry: "Bizhuteri dhe ora", sport: "Sport", multi: "Dyqane me shumë kategori" };
+async function pageShops() {
+  const list = await api("/api/shops");
+  document.title = "Dyqanet | shporta";
+  const groups = {};
+  for (const s of list) (groups[s.category] ||= []).push(s);
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head"><h1>dyqanet</h1><p>${list.length} dyqane online. Çmimet merren nga faqet e tyre publike.</p></div>
+    <div style="height:26px"></div>
+    <div class="shop-groups">${Object.entries(SHOP_GROUPS).filter(([k]) => groups[k]).map(([k, label]) =>
+      `<div class="shop-group"><h2>${label}</h2>${groups[k].map((s) =>
+        `<a href="https://${esc(s.domain)}" target="_blank" rel="noopener">${esc(shopName(s.domain))}<span>${s.products.toLocaleString("en").replace(/,/g, " ")}</span></a>`).join("")}</div>`).join("")}</div>
+  </div>`;
+}
+
+function pageExtension() {
+  document.title = "Shtesa për shfletuesin | shporta";
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head"><h1>shtesa për shfletuesin</h1>
+      <p>Kur hap një produkt në një dyqan online, shtesa të tregon nëse çmimi është i mirë dhe ku e gjen më lirë.</p></div>
+    <section class="section" style="border:0">
+      <div class="band">
+        <div><h2>si funksionon</h2>
+          <p>Shtesa lexon vetëm emrin dhe çmimin e produktit që ke hapur, dhe e krahason me dyqanet e tjera në shporta. Nuk lexon fjalëkalime, nuk ndjek se ku shfleton dhe nuk blen gjë për ty.</p></div>
+        <ol><li>Hap një produkt në çdo dyqan online.</li><li>Në cep të faqes del çmimi: i mirë, normal apo i lartë.</li><li>Kliko një dyqan më të lirë për ta hapur.</li></ol>
+      </div>
+    </section>
+    <section class="section"><h2>instalimi (version testimi)</h2>
+      <p class="lead">Shtesa nuk është ende në Chrome Web Store. Për ta provuar në Chrome ose Edge:</p>
+      <ol>
+        <li>Shkarko dosjen <code>extension</code> nga <a href="https://github.com/shporta-app/new-shporta" target="_blank" rel="noopener">github.com/shporta-app/new-shporta</a>.</li>
+        <li>Hap <code>chrome://extensions</code> dhe aktivizo <b>Developer mode</b>.</li>
+        <li>Kliko <b>Load unpacked</b> dhe zgjidh dosjen <code>extension</code>.</li>
+      </ol>
+    </section>
+  </div>`;
+}
+
+/* ---------- router ---------- */
+
+function setFoot(updated) {
+  if (!updated) return;
+  const d = new Date(updated);
+  document.getElementById("foot-updated").textContent =
+    `Çmimet u përditësuan më ${d.toLocaleDateString("sq-AL", { day: "numeric", month: "long", year: "numeric" })}.`;
+}
+
+async function route() {
+  const { pathname, search } = location;
+  const params = search.slice(1);
+  document.querySelectorAll(".top-nav a").forEach((a) => {
+    if (pathname.startsWith(a.getAttribute("href"))) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  main.innerHTML = `<div class="wrap loading">Duke ngarkuar…</div>`;
+  document.title = "shporta: krahaso çmimet e modës dhe kozmetikës në Shqipëri";
+  try {
+    let m;
+    if (pathname === "/") await pageHome();
+    else if (pathname === "/kategorite") await pageCategories();
+    else if ((m = pathname.match(/^\/kategori\/([\w-]+)$/))) await pageCategory(m[1], params);
+    else if ((m = pathname.match(/^\/produkt\/([\w-]+)$/))) await pageItem(m[1]);
+    else if (pathname === "/kerko") await pageSearch(params);
+    else if (pathname === "/dyqanet") await pageShops();
+    else if (pathname === "/shtesa") pageExtension();
+    else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
+  } catch (e) {
+    main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>
+      ${e.status === 404 ? `<a href="/" data-link>Kthehu në faqen kryesore</a>` : "Serveri mund të jetë duke u zgjuar. Rifresko faqen pas pak sekondash."}</div>`;
+  }
+  if (!homeCache) api("/api/home").then((d) => { homeCache = d; setFoot(d.stats.updated); }).catch(() => {});
+}
+
+function go(url) {
+  history.pushState(null, "", url);
+  window.scrollTo(0, 0);
+  route().then(() => main.focus({ preventScroll: true }));
+}
+
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-link]");
+  if (!a || e.metaKey || e.ctrlKey || e.shiftKey || a.target === "_blank") return;
+  e.preventDefault();
+  go(a.getAttribute("href"));
+});
+document.addEventListener("submit", (e) => {
+  if (!e.target.matches("[data-search]")) return;
+  e.preventDefault();
+  const q = new FormData(e.target).get("q").trim();
+  if (q) go(`/kerko?q=${encodeURIComponent(q)}`);
+});
+window.addEventListener("popstate", route);
+route();
