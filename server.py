@@ -128,7 +128,9 @@ def home():
     for f in featured:
         f["offers"] = offers_for(f["id"])
     cats = {c: n for c, n in db().execute("SELECT cat, COUNT(*) FROM items GROUP BY cat")}
-    return {"stats": stats, "deals": deals, "featured": featured, "impact": impact(), "routine": routine(),
+    top = {k: dupe_list({"kind": k})["items"] for k in ("inspired", "active")}
+    picks = [r for pair in zip(top["inspired"][:6], top["active"][:6]) for r in pair if r["orig_image"]][:8]
+    return {"stats": stats, "deals": deals, "featured": featured, "impact": impact(), "routine": routine(), "dupes": picks,
             "categories": [{"id": c, "label": label, "count": cats.get(c, 0)} for c, label in CATEGORIES.items()]}
 
 
@@ -209,6 +211,34 @@ def category(cat, q):
             "page_size": PAGE_SIZE, "items": items, "shops": shops}
 
 
+DUPE_COLS = """x.kind, x.reason, x.save_pct, x.orig_price, x.dupe_price, x.orig_size, x.dupe_size, x.dupe_product,
+               o.id AS orig_id, o.title AS orig_title, o.image AS orig_image, o.shops AS orig_shops,
+               d.id AS dupe_id, d.title AS dupe_title, d.image AS dupe_image, d.shops AS dupe_shops"""
+DUPE_FROM = "FROM dupes x JOIN items o ON o.id = x.item_id JOIN items d ON d.id = x.dupe_id"
+
+
+def dupes_of(item_id, limit=8):
+    return item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.item_id = ? ORDER BY x.save_pct DESC LIMIT ?", (item_id, limit))
+
+
+def originals_of(item_id):
+    return item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.dupe_id = ? ORDER BY o.shops DESC LIMIT 3", (item_id,))
+
+
+def dupe_list(q):
+    """One row per expensive product: its best dupe. Newest perfume and skincare finds first by price."""
+    kind = q.get("kind") if q.get("kind") in ("inspired", "active") else None
+    page = max(0, int(q.get("page") or 0))
+    where = "WHERE x.save_pct = (SELECT MAX(save_pct) FROM dupes y WHERE y.item_id = x.item_id)" + (" AND x.kind = ?" if kind else "")
+    args = [kind] if kind else []
+    total = db().execute(f"SELECT COUNT(DISTINCT x.item_id) {DUPE_FROM} {where}", args).fetchone()[0]
+    rows = item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} {where} GROUP BY x.item_id ORDER BY x.orig_price DESC LIMIT ? OFFSET ?",
+                     args + [PAGE_SIZE, page * PAGE_SIZE])
+    for r in rows:
+        r["count"] = db().execute("SELECT COUNT(*) FROM dupes WHERE item_id = ?", (r["orig_id"],)).fetchone()[0]
+    return {"total": total, "page": page, "page_size": PAGE_SIZE, "kind": kind, "items": rows}
+
+
 def item(item_id):
     r = db().execute(f"SELECT {ITEM_COLS} FROM items WHERE id = ?", (item_id,)).fetchone()
     if not r:
@@ -225,6 +255,8 @@ def item(item_id):
             out.append(o["item_id"])
     it["similar"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(out))})", out) if out else []
     it["category_label"] = CATEGORIES.get(it["cat"], "Të tjera")
+    it["dupes"] = dupes_of(item_id)
+    it["dupe_of"] = originals_of(item_id)
     return it
 
 
@@ -377,6 +409,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200 if res else 404, res or {"error": "Ky produkt nuk u gjet."})
             if path == "/api/search":
                 return self._send(200, search(q.get("q", ""), max(0, int(q.get("page") or 0))))
+            if path == "/api/dupes":
+                return self._send(200, dupe_list(q), cache="public, max-age=600")
             if path == "/api/shops":
                 return self._send(200, shops(), cache="public, max-age=3600")
             if path.startswith("/go/"):

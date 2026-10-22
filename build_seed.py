@@ -19,6 +19,7 @@ import sqlite3
 import unicodedata
 from pathlib import Path
 
+import dupes
 from match import parse
 
 HERE = Path(__file__).parent
@@ -145,6 +146,8 @@ def main():
         INSERT INTO words(words) VALUES('rebuild');
     """)
     dst.commit()
+    n_pairs, n_orig, kinds = dupes.build(dst)  # cheaper alternatives to expensive products (dupes.py)
+    print(f"dupes: {n_pairs} pairs for {n_orig} products {kinds}")
     dst.execute("VACUUM")
     dst.close()
     with open(OUT, "rb") as f, gzip.open(str(OUT) + ".gz", "wb", compresslevel=9) as g:

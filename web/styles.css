@@ -246,3 +246,26 @@ a:hover { color: var(--violet-deep); }
 .prose h2 { font: 600 21px var(--display); margin: 30px 0 6px; }
 .prose code { background: var(--soft); padding: 1px 6px; border-radius: 4px; font-size: 15px; }
 .size-warn { border-left: 3px solid var(--violet); background: var(--violet-tint); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 15px; margin: 16px 0 0; }
+
+/* dupes: original and its cheaper alternative side by side, with the reason underneath */
+.dps { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 18px 28px; }
+.dp { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.dp-single { grid-template-columns: 1fr; }
+.dp-side { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: start; text-decoration: none; color: var(--ink); }
+.dp-side small { display: block; color: var(--muted); font-size: 13px; }
+.dp-dupe small { color: var(--violet-deep); font-weight: 600; }
+.dp-pic { width: 64px; height: 64px; background: #fff; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center; overflow: hidden; }
+.dp-pic img { width: 100%; height: 100%; object-fit: contain; }
+.dp-pic .noimg { font-size: 11px; color: var(--muted); }
+.dp-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; line-height: 1.3; margin-bottom: 2px; }
+.dp-side .num small { display: inline; font: 400 13px var(--body); color: var(--muted); }
+.dp-side:hover .dp-name { color: var(--violet); }
+.dp-why { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.dp-why .save { font: 600 14px/1 var(--display); background: var(--lime); color: #14121F; border-radius: 999px; padding: 6px 10px; }
+.dp-why .chip { font-size: 13px; font-weight: 600; background: var(--violet-tint); color: var(--violet-deep); border-radius: 999px; padding: 3px 10px; }
+.dp-why small { color: var(--muted); font-size: 14px; flex-basis: 100%; }
+.dp-more { display: block; margin: -8px 0 6px; font-size: 15px; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; padding: 18px 0 22px; }
+.tab { text-decoration: none; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 7px 16px; font-weight: 600; }
+.tab[aria-current="page"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+@media (max-width: 560px) { .dp { grid-template-columns: 1fr; } }
