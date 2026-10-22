@@ -26,45 +26,7 @@ HERE = Path(__file__).parent
 SRC = HERE / "data" / "phia.db"
 OUT = HERE / "seed" / "phia-api.db"
 
-# Our categories, checked in this order against the folded title (then the shop's own category text).
-# Word starts, so "ora" matches "ora dore" but not "koral".
-CATEGORIES = [
-    ("parfume", "Parfume", r"parfum|perfum|eau de (toilette|parfum|cologne)|\bedp\b|\bedt\b|kolonj|cologne|fragrance|body mist"),
-    ("grim", "Grim", r"mascara|maskar|rimel|lipstick|buzekuq|lip ?gloss|lip ?liner|foundation|fondatin|pudr|powder|concealer|"
-                     r"korrektor|eyeliner|eye ?shadow|hije sysh|blush|allik|bronzer|highlighter|primer|\bbrows?\b|vetull|makeup|make up|"
-                     r"\bgrim\b|manikyr|llak thonj|nail polish|\bthonj"),
-    ("floke", "Flokë", r"shampo|conditioner|balsam floke|\bhair\b|flok|keratin|ngjyre per floke"),
-    ("femije", "Fëmijë", r"\bbaby|\bbebe|femij|\bkids|vajza|djem|\bjunior|foshnj|neonat"),
-    ("lekure", "Kujdesi i lëkurës", r"serum|toner|tonik|cleans|pastrues|spf|sunscreen|kunder diellit|moistur|hidrat|essence|ampoule|"
-                                    r"retinol|niacinamide|hyaluron|acne|akne|peeling|exfol|micellar|krem fytyr|\bface\b|fytyr|"
-                                    r"eye cream|krem sysh|sheet mask|maske fytyr|\bcream|\bcreme|\bkrem|lotion|\bbalm\b|gel pastrues|dermo"),
-    ("trup", "Trupi & higjiena", r"\bbody\b|\btrup|\bdush|shower|deodorant|deo |sapun|soap|scrub|pasta dhemb|toothpaste|furce dhemb|kremi i duarve|hand cream"),
-    ("kepuce", "Këpucë", r"kepuc|atlete|sneaker|\bshoes?\b|cizm|\bboots?\b|\bsandal(e|et|s)?\b|papuc|\bslippers?\b|mokasin|loafer|\btaka\b|espadril|\bclogs?\b"),
-    ("canta", "Çanta", r"\bcant[ae]|\bbag\b|\bbags\b|portofol|wallet|backpack|shpine|valixh|luggage|suitcase|crossbody|tote"),
-    ("ora", "Ora", r"\bore dore|\bora\b|\bwatch|smartwatch|chronograph"),
-    ("syze", "Syze", r"\bsyze|sunglass|eyeglass|optik|\blente|contact lens|\bkorniz"),
-    ("bizhuteri", "Bizhuteri", r"\bunaz|\bring\b|varese|necklace|\bvathe|earring|byzylyk|bracelet|argjend|\bsilver|\bari 1|"
-                               r"\bgold\b|jewel|bizhuteri|\bzinxhir|pendant|varese"),
-    ("sport", "Sport", r"\bsport|fitness|training|running|vrapim|futboll|\bgym|\byoga|\btuta\b"),
-    ("veshje", "Veshje", r"bluz|fustan|xhins|pantallon|xhaket|xhup|pallto|kemish|\bfund\b|triko|pulover|maic|t-?shirt|\bdress|"
-                         r"jeans|\bshirt|\bcoat|jacket|skirt|sweater|hoodie|\btop\b|breke|sutjen|pizham|lingerie|te brendshme|"
-                         r"corape|\bsocks|kostum|blazer|kardigan|cardigan|polo|bermuda|shorts|leggings|kemishe|jelek|pajama|bra\b"),
-]
-SHOP_FALLBACK = {"perfume": "parfume", "shoes": "kepuce", "jewelry": "bizhuteri", "clothing": "veshje", "sport": "sport"}
-CAT_RE = [(c, re.compile(p)) for c, _, p in CATEGORIES]
-
-
-def fold(s):
-    s = unicodedata.normalize("NFKD", (s or "").lower())
-    return "".join(ch for ch in s if not unicodedata.combining(ch))
-
-
-def classify(title, category_raw, shop_cat):
-    for text in (fold(title), fold(category_raw)):
-        for cat, rx in CAT_RE:
-            if rx.search(text):
-                return cat
-    return SHOP_FALLBACK.get(shop_cat, "tjeter")
+from categories import CATEGORIES, classify, fold  # noqa: E402  (categories.py explains the rules)
 
 
 def main():
@@ -91,7 +53,7 @@ def main():
             """SELECT id, shop, title, brand, url, image, price, regular_price, currency, in_stock, category_raw
                FROM products WHERE price > 0"""):
         key, size = parse(title)
-        cat = classify(title, craw, shop_cat.get(shop))
+        cat = classify(title, craw, shop_cat.get(shop), shop)
         gid = group_of.get(pid)
         # one listing item per matched product, otherwise per product page (Shopify ?variant= rows share a page)
         item = "g" + gid if gid else "p" + hashlib.md5(f"{shop}|{(url or str(pid)).split('?')[0]}".encode()).hexdigest()[:12]

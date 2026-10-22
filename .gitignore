@@ -10,3 +10,4 @@ report.html
 probe*.json
 woo_rescrape.txt
 outreach/
+dist/

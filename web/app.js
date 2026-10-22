@@ -379,6 +379,11 @@ function pagePrivacy() {
       <code>utm_source=shporta</code>, që dyqani ta dijë se vizita erdhi nga shporta. Kjo mund të na lejojë në të ardhmen të marrim një komision nga dyqani
       për blerjet që sjellim. Çmimi për ty nuk ndryshon kurrë, dhe renditja e dyqaneve bëhet gjithmonë sipas çmimit.</p>
     <p>Nuk shesim të dhëna, nuk kemi llogari përdoruesish dhe nuk shohim çfarë blen te dyqani.</p>
+    <h2>Shtesa për shfletuesin</h2>
+    <p>Kur hap një faqe produkti, shtesa lexon emrin, çmimin dhe monedhën e produktit, si edhe adresën e faqes, dhe i dërgon te
+      <code>shporta.app</code> për të gjetur çmime dhe dupe në dyqane të tjera. Në faqet që nuk janë produkte nuk dërgon asgjë.
+      Nuk lexon fjalëkalime, formularë, të dhëna pagese apo historinë e shfletimit, nuk ruan asgjë në kompjuterin tënd dhe nuk
+      ruan te ne të dhënat e faqes që ke hapur. Klikimet nga paneli drejt dyqaneve numërohen si te faqja, me <code>/go/</code>.</p>
     <h2>Zgjedhja jote</h2>
     <p>Tani: <b>${c === "all" ? "të gjitha cookies" : c === "essential" ? "vetëm të domosdoshmet" : "pa zgjedhje"}</b>.</p>
     <p><button class="btn" type="button" data-consent="all">Prano të gjitha</button>

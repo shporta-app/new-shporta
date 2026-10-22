@@ -1,6 +1,9 @@
-// Reads the product on the page the shopper is viewing (no requests to the shop), asks our API, shows a panel.
+// Reads the product on the page the shopper is viewing, asks shporta.app, shows a small panel.
+// It never contacts the shop and stores nothing from the page.
 (() => {
+  const SITE = "https://shporta.app";
   const CUR = { L: "ALL", LEK: "ALL", "LEKË": "ALL", LEKE: "ALL", ALL: "ALL", "€": "EUR", EUR: "EUR" };
+  if (location.hostname.endsWith("shporta.app")) return;
 
   function num(v) {
     if (v == null) return null;
@@ -51,39 +54,53 @@
     return p;
   }
 
-  const fmt = (n, c) => (c === "EUR" ? "€" + n.toFixed(2) : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L");
-  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmt = (n, c) => (c === "EUR" ? "€" + Number(n).toFixed(2) : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const host = (d) => String(d || "").replace(/^www\./, "");
   const LABEL = { good: ["Çmim i mirë", "#1f7a4d"], normal: ["Çmim normal", "#7a6a1f"], high: ["Çmim i lartë", "#b3261e"] };
 
   function render(product, data) {
-    document.getElementById("phia-al-host")?.remove();
+    document.getElementById("shporta-host")?.remove();
     const exact = (data.exact || []).filter((o) => o.in_stock);
     const similar = data.similar || [];
-    if (!exact.length && !similar.length) return;
-    const host = document.createElement("div");
-    host.id = "phia-al-host";
-    const root = host.attachShadow({ mode: "open" });
+    const dupes = data.dupes || [];
+    if (!exact.length && !similar.length && !dupes.length) return;
+    const el = document.createElement("div");
+    el.id = "shporta-host";
+    const root = el.attachShadow({ mode: "open" });
     const v = data.verdict;
     const head = v
       ? `<div class="v" style="color:${LABEL[v.label][1]}">${LABEL[v.label][0]}</div>
-         <div class="s">${v.save ? `Më lirë me ${fmt(v.save, product.currency)} te dyqani më i lirë` : `Mesatarja në ${v.shops} dyqane: ${fmt(v.median, product.currency)}`}</div>`
-      : `<div class="v">${exact.length ? "Edhe në këto dyqane" : "Produkte të ngjashme"}</div>`;
-    const list = (exact.length ? exact : similar).slice(0, 6).map((o) =>
-      `<a href="${esc(o.url)}" target="_blank" rel="noopener"><b>${fmt(o.price, o.currency)}</b><span>${esc(o.shop.replace(/^www\./, ""))}${exact.length ? "" : " · " + esc(o.title)}</span></a>`).join("");
+         <div class="s">${v.save ? `${fmt(v.save, product.currency)} më lirë te dyqani më i lirë` : `Mesatarja në ${v.shops} dyqane: ${fmt(v.median, product.currency)}`}</div>`
+      : `<div class="v">${exact.length ? "Edhe në këto dyqane" : similar.length ? "Të ngjashme, më lirë" : "Dupe më të lira"}</div>`;
+    const offerRow = (o, label) => `<a href="${SITE}/go/${o.id}?i=${encodeURIComponent(o.item || "")}&f=ext" target="_blank" rel="noopener">
+        <b>${fmt(o.price, o.currency)}</b><span>${esc(host(o.shop))}${label ? " · " + esc(o.title) : ""}</span></a>`;
+    const list = exact.length ? exact.slice(0, 5).map((o) => offerRow(o, false)).join("")
+      : similar.slice(0, 4).map((o) => offerRow(o, true)).join("");
+    const dupeRows = dupes.slice(0, 3).map((d) => `<a href="${SITE}/produkt/${encodeURIComponent(d.dupe_id)}" target="_blank" rel="noopener">
+        <b>${fmt(d.dupe_price, "ALL")}</b><span>${esc(d.dupe_title)}</span><i>${esc(d.reason)}</i></a>`).join("");
     root.innerHTML = `<style>
-      .p{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:300px;max-width:calc(100vw - 32px);background:#fff;color:#1b1b1f;
-         border:1px solid #ddd;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);font:13px/1.4 "Segoe UI",system-ui,sans-serif;padding:12px 14px}
+      .p{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:310px;max-width:calc(100vw - 32px);background:#fff;color:#14121F;
+         border:1px solid #E7E5EE;border-radius:12px;box-shadow:0 8px 28px rgba(20,18,31,.18);font:13px/1.4 system-ui,"Segoe UI",sans-serif;padding:12px 14px}
+      .brand{font-weight:800;letter-spacing:-.02em;color:#7B4DFF;font-size:13px;margin-bottom:4px}
       .v{font-weight:700;font-size:15px}.s{color:#555;margin:2px 0 8px}
-      a{display:flex;gap:10px;padding:6px 0;border-top:1px solid #eee;color:inherit;text-decoration:none}a:hover span{text-decoration:underline}
-      b{min-width:70px;font-variant-numeric:tabular-nums}span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:16px;cursor:pointer;color:#888}
+      h4{margin:10px 0 2px;font-size:12px;color:#6E6A7C;font-weight:600}
+      a{display:flex;gap:10px;padding:6px 0;border-top:1px solid #eee;color:inherit;text-decoration:none;align-items:baseline;flex-wrap:wrap}
+      a:hover span{text-decoration:underline}
+      b{min-width:68px;font-variant-numeric:tabular-nums}span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+      i{font-style:normal;font-size:11px;background:#F1ECFF;color:#5B2EE0;border-radius:999px;padding:1px 7px;margin-left:78px}
+      .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;cursor:pointer;color:#888}
       .f{color:#888;font-size:11px;margin-top:6px}</style>
-      <div class="p"><button class="x" title="Mbyll">×</button>${head}${list}<div class="f">Phia AL · çmimet nga dyqanet online shqiptare</div></div>`;
-    root.querySelector(".x").onclick = () => host.remove();
-    document.documentElement.appendChild(host);
+      <div class="p" role="dialog" aria-label="shporta"><button class="x" title="Mbyll" aria-label="Mbyll">×</button>
+        <div class="brand">shporta</div>${head}${list}
+        ${dupeRows ? `<h4>Dupe: jo i njëjti produkt, bën të njëjtën punë</h4>${dupeRows}` : ""}
+        <div class="f">Çmimet nga dyqanet online shqiptare, në shporta.app</div></div>`;
+    root.querySelector(".x").onclick = () => el.remove();
+    document.documentElement.appendChild(el);
   }
 
   let lastKey = "";
+  let retried = false;
   function check() {
     const p = detect();
     const key = p ? p.url + "|" + p.price : "";
@@ -91,6 +108,7 @@
     lastKey = key;
     chrome.runtime.sendMessage({ type: "lookup", product: p }, (res) => {
       if (res && res.ok) render(p, res.data);
+      else if (!retried) { retried = true; lastKey = ""; setTimeout(check, 20000); } // server may have been waking up
     });
   }
 

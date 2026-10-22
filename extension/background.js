@@ -1,23 +1,23 @@
-// Talks to our API. Content scripts can't call it themselves from an https shop page, so they ask us.
-// The hosted API first; the local one (python server.py) when developing.
-const APIS = ["https://shporta.app", "https://new-shporta.onrender.com", "http://127.0.0.1:8787"];
+// Talks to shporta.app for the content script (it can't call our API itself from a shop's page).
+// Sends only the product name, price, currency and page address; stores nothing.
+const API = "https://shporta.app";
 
 async function lookup(product) {
-  let lastError;
-  for (const api of APIS) {
-    try {
-      const r = await fetch(`${api}/api/lookup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(product),
-      });
-      if (r.ok) return await r.json();
-      lastError = new Error(`HTTP ${r.status}`);
-    } catch (e) {
-      lastError = e;
-    }
+  // the free server sleeps when idle and takes up to a minute to wake: wait for it once
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 75000);
+  try {
+    const r = await fetch(`${API}/api/lookup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(product),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
   }
-  throw lastError;
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {

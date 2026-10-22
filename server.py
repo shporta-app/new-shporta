@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+import dupes
 from match import GENERIC, parse, same_size
 
 HERE = Path(__file__).parent
@@ -298,6 +299,44 @@ def lookup(title, price=None, currency="ALL", url=""):
            "exact": [public(o) for o in offers[:20]], "verdict": verdict(price, currency, offers)}
     if not offers:
         out["similar"] = [public(o) for o in similar(key, price, currency)]
+    out["dupes"] = page_dupes(title, price, currency, offers)
+    return out
+
+
+def page_dupes(title, price, currency, offers):
+    """Dupes for the product on the shopper's page: the known ones when we have the product, otherwise skincare
+    with the same active at the same strength in the same kind of product, 30%+ cheaper (same rule as dupes.py)."""
+    if offers and offers[0].get("item_id"):
+        rows = dupes_of(offers[0]["item_id"], limit=4)
+        if rows:
+            return rows
+    if not price or currency != "ALL":
+        return []
+    # perfume: the page names an original that shops sell "inspired by" versions of ("Creed Aventus")
+    words = set(re.findall(r"[a-z0-9]+", dupes.fold(title)))
+    for reason, orig_id in db().execute("SELECT DISTINCT reason, item_id FROM dupes WHERE kind = 'inspired'"):
+        name = [w for w in re.findall(r"[a-z0-9]+", dupes.fold(reason.split(" nga ", 1)[-1])) if w not in dupes.GENDER]
+        if len(name) >= 2 and all(w in words for w in name):
+            rows = [r for r in dupes_of(orig_id, limit=4) if r["dupe_price"] <= price * 0.7]
+            if rows:
+                return rows
+    m = dupes.ACTIVE_RE.search(dupes.fold(title))
+    kind = dupes.kind_of(title)
+    if not (m and kind):
+        return []
+    act, pct = m.group(1), float(m.group(2).replace(",", "."))
+    out = []
+    for it in item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE cat = 'lekure' AND currency = 'ALL' AND in_stock_shops >= 1
+                            AND search LIKE ? AND search LIKE ? AND min_price <= ? ORDER BY min_price LIMIT 300""",
+                        (f"%{act}%", f"%{m.group(2)}%", price * 0.7)):
+        mm = dupes.ACTIVE_RE.search(dupes.fold(it["title"]))
+        if mm and mm.group(1) == act and float(mm.group(2).replace(",", ".")) == pct and dupes.kind_of(it["title"]) == kind \
+                and dupes.first_word(it["title"]) != dupes.first_word(title):
+            out.append({"kind": "active", "reason": f"{dupes.ACTIVES[act]} {pct:g}%", "dupe_id": it["id"],
+                        "dupe_title": it["title"], "dupe_image": it["image"], "dupe_price": it["min_price"],
+                        "save_pct": round((1 - it["min_price"] / price) * 100)})
+        if len(out) == 4:
+            break
     return out
 
 
