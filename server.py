@@ -91,7 +91,7 @@ def verdict(price, currency, offers):
 
 
 def public(o):
-    return {k: o[k] for k in ("shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
+    return {k: o[k] for k in ("id", "shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
             if k in o.keys()} | ({"item": o["item_id"]} if "item_id" in o.keys() else {})
 
 
@@ -128,8 +128,53 @@ def home():
     for f in featured:
         f["offers"] = offers_for(f["id"])
     cats = {c: n for c, n in db().execute("SELECT cat, COUNT(*) FROM items GROUP BY cat")}
-    return {"stats": stats, "deals": deals, "featured": featured,
+    return {"stats": stats, "deals": deals, "featured": featured, "impact": impact(), "routine": routine(),
             "categories": [{"id": c, "label": label, "count": cats.get(c, 0)} for c, label in CATEGORIES.items()]}
+
+
+_home = {"at": 0, "data": None}
+
+
+def cached_home():
+    import time
+    if not _home["data"] or time.time() - _home["at"] > 600:
+        _home["data"], _home["at"] = home(), time.time()
+    return _home["data"]
+
+
+def impact():
+    """How much more the dearest shop asks than the cheapest, for the same product in stock in 3+ shops."""
+    rows = db().execute("""SELECT min_price, max_price FROM items WHERE in_stock_shops >= 3 AND currency = 'ALL'
+                           AND cat != 'tjeter' AND save_pct BETWEEN 3 AND 70""").fetchall()
+    if not rows:
+        return None
+    more = sorted((hi / lo - 1) * 100 for lo, hi in rows if lo > 0)
+    diff = sorted(hi - lo for lo, hi in rows)
+    return {"products": len(rows), "median_more_pct": round(statistics.median(more)),
+            "median_diff": round(statistics.median(diff)), "share_over_20": round(sum(m >= 20 for m in more) / len(more) * 100)}
+
+
+# A basic skincare routine, priced with real matched products: one per step, the one sold in most shops.
+ROUTINE = [("Pastrues", r"cleans|pastrues|foam|cleansing"), ("Tonik", r"toner|tonik"),
+           ("Serum", r"serum|essence|ampoule"), ("Krem hidratues", r"moistur|hidrat|face cream|krem fytyr|\bcream\b|\bkrem\b"),
+           ("Mbrojtje nga dielli", r"\bspf|sunscreen|sun cream|kunder diellit")]
+
+
+def routine():
+    pool = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE cat = 'lekure' AND in_stock_shops >= 4 AND currency = 'ALL'
+                         AND save_pct BETWEEN 10 AND 65 AND image IS NOT NULL ORDER BY in_stock_shops DESC, save_pct DESC""", ())
+    steps, used = [], set()
+    for label, rx in ROUTINE:
+        r = re.compile(rx)
+        pick = next((it for it in pool if it["id"] not in used and r.search(fold(it["title"]))
+                     and not re.search(r"\beye\b|sysh|mask|maske|patch|\bbody\b|trup|\bhand|duar|\blip|buze|\bhair|flok|\bfoot|kemb", fold(it["title"]))), None)
+        if pick:
+            used.add(pick["id"])
+            steps.append({"step": label, **pick})
+    if len(steps) < 3:
+        return None
+    lo, hi = sum(s["min_price"] for s in steps), sum(s["max_price"] for s in steps)
+    return {"steps": steps, "cheapest": lo, "dearest": hi, "difference": hi - lo}
 
 
 def offers_for(item_id):
@@ -271,6 +316,26 @@ def similar(key, price, currency, limit=8):
     return res[:limit]
 
 
+# ------------------------------------------------------------------ outbound clicks
+
+CLICKS = collections.Counter()  # since the last restart; every click is also printed to the log
+
+
+def outbound(pid, item_id, from_page, visitor):
+    r = db().execute("SELECT shop, url FROM products WHERE id = ?", (pid,)).fetchone()
+    if not r or not r["url"]:
+        return None
+    u = urlparse(r["url"])
+    if u.scheme not in ("http", "https"):
+        return None
+    q = [p for p in u.query.split("&") if p and not p.startswith("utm_")]
+    q += ["utm_source=shporta", "utm_medium=referral", "utm_campaign=krahasimi"]
+    CLICKS[r["shop"]] += 1
+    print(json.dumps({"click": r["shop"], "product": pid, "item": item_id, "from": from_page, "visitor": visitor,
+                      "at": __import__("datetime").datetime.utcnow().isoformat(timespec="seconds")}), flush=True)
+    return u._replace(query="&".join(q)).geturl()
+
+
 # ------------------------------------------------------------------ HTTP
 
 class Handler(BaseHTTPRequestHandler):
@@ -298,7 +363,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/health":
                 return self._send(200, {"ok": True, "offers": db().execute("SELECT COUNT(*) FROM products").fetchone()[0]})
             if path == "/api/home":
-                return self._send(200, home(), cache="public, max-age=600")
+                return self._send(200, cached_home(), cache="public, max-age=600")
             if path.startswith("/api/category/"):
                 res = category(path.rsplit("/", 1)[1], q)
                 return self._send(200 if res else 404, res or {"error": "Kjo kategori nuk ekziston."})
@@ -309,6 +374,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, search(q.get("q", ""), max(0, int(q.get("page") or 0))))
             if path == "/api/shops":
                 return self._send(200, shops(), cache="public, max-age=3600")
+            if path.startswith("/go/"):
+                cookies = dict(c.strip().split("=", 1) for c in (self.headers.get("Cookie") or "").split(";") if "=" in c)
+                visitor = cookies.get("sp_id") if cookies.get("sp_consent") == "all" else None
+                dest = outbound(int(path.rsplit("/", 1)[1]), q.get("i", "")[:20], q.get("f", "")[:20], visitor)
+                if not dest:
+                    return self._send(404, {"error": "Ky link nuk ekziston më."})
+                self.send_response(302)
+                self.send_header("Location", dest)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if path == "/api/clicks" and os.environ.get("ADMIN_TOKEN") and q.get("token") == os.environ["ADMIN_TOKEN"]:
+                return self._send(200, dict(CLICKS.most_common()))
         except (ValueError, sqlite3.Error) as e:
             return self._send(400, {"error": str(e)})
         # static files; anything else is a page of the single-page app

@@ -10,6 +10,11 @@ const img = (src, alt = "") =>
   src ? `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'noimg',textContent:'Pa foto'}))">`
       : `<span class="noimg">Pa foto</span>`;
 
+// Every link to a shop goes through /go/: we count the click and tag it utm_source=shporta.
+const go_ = (o, item, from) => `/go/${o.id}?i=${encodeURIComponent(item || "")}&f=${from}`;
+const shopLink = (o, item, from, cls = "", label = "Hape në dyqan") =>
+  `<a class="${cls}" href="${go_(o, item, from)}" target="_blank" rel="noopener sponsored">${label}</a>`;
+
 async function api(path) {
   const r = await fetch(path);
   const data = await r.json().catch(() => ({}));
@@ -20,7 +25,7 @@ async function api(path) {
 /* ---------- shared pieces ---------- */
 
 // One product, every shop's price: a bar per shop ending in a price tag; the cheapest in-stock one is lime.
-function ruler(item, { heading = "h3", animate = false, linkHead = true, showHead = true } = {}) {
+function ruler(item, { heading = "h3", animate = false, linkHead = true, showHead = true, from = "ballina" } = {}) {
   const offers = (item.offers || []).filter((o) => o.currency === item.currency);
   if (!offers.length) return "";
   const max = Math.max(...offers.map((o) => o.price));
@@ -32,7 +37,7 @@ function ruler(item, { heading = "h3", animate = false, linkHead = true, showHea
     return `<li class="${cls}" style="--i:${i}">
       <span class="shop" title="${esc(shopName(o.shop))}">${esc(shopName(o.shop))}</span>
       <span class="track"><span class="bar" style="--w:${w}%"></span>
-        <a class="tag" style="--w:${w}%" href="${esc(o.url)}" target="_blank" rel="noopener"
+        <a class="tag" style="--w:${w}%" href="${go_(o, item.id, from)}" target="_blank" rel="noopener sponsored"
            aria-label="${esc(shopName(o.shop))}: ${lek(o.price, o.currency)}${o.in_stock ? "" : ", s'ka gjendje"}">${lek(o.price, o.currency)}</a></span>
     </li>`;
   }).join("");
@@ -46,7 +51,7 @@ function ruler(item, { heading = "h3", animate = false, linkHead = true, showHea
 
 function tile(it) {
   const range = it.shops > 1 && it.max_price > it.min_price
-    ? `<small>deri ${lek(it.max_price, it.currency)}</small>` : "";
+    ? `<small>kursen deri ${lek(it.max_price - it.min_price, it.currency)}</small>` : "";
   return `<a class="tile" href="/produkt/${esc(it.id)}" data-link>
     <span class="pic">${img(it.image, it.title)}</span>
     ${it.shops > 1 ? `<span class="chip">${plural(it.shops, "dyqan", "dyqane")}</span>` : ""}
@@ -110,6 +115,8 @@ async function pageHome() {
     </div>
   </div></section>
 
+  ${impactSection(d)}
+
   <section class="section"><div class="wrap">
     <div class="section-head"><h2>diferencat më të mëdha tani</h2></div>
     <p class="lead">I njëjti produkt, në stok në të paktën tre dyqane. Përqindja tregon sa më lirë është te dyqani më i lirë.</p>
@@ -138,6 +145,31 @@ async function pageHome() {
     fi = (fi + 1) % d.featured.length;
     document.querySelector("#featured .ruler").outerHTML = ruler(d.featured[fi], { animate: true });
   };
+}
+
+// What not comparing costs: real numbers from the data, and a basic skincare routine priced both ways.
+function impactSection(d) {
+  const im = d.impact, r = d.routine;
+  if (!im) return "";
+  const receipt = r ? `<div class="receipt" aria-label="Rutina bazë e kujdesit për lëkurën">
+      <div class="receipt-head"><span>Rutina bazë e lëkurës</span><span>Më lirë</span><span>Më shtrenjtë</span></div>
+      ${r.steps.map((s) => `<a class="receipt-row" href="/produkt/${esc(s.id)}" data-link>
+          <span><small>${esc(s.step)}</small>${esc(s.title)}</span>
+          <span class="num">${lek(s.min_price)}</span><span class="num dear">${lek(s.max_price)}</span></a>`).join("")}
+      <div class="receipt-total"><span>Gjithsej</span><span class="num">${lek(r.cheapest)}</span><span class="num dear">${lek(r.dearest)}</span></div>
+      <div class="receipt-diff"><span>Paguan më shumë për të njëjtat produkte</span><b class="num">${lek(r.difference)}</b></div>
+      <p class="receipt-note">Po ta rinovosh rutinën 4 herë në vit, diferenca bëhet <b class="num">${lek(r.difference * 4)}</b> në vit.</p>
+    </div>` : "";
+  return `<section class="section impact"><div class="wrap impact-in">
+    <div>
+      <h2>sa kushton të mos krahasosh</h2>
+      <p class="impact-lead">Për të njëjtin produkt, dyqani më i shtrenjtë kërkon mesatarisht
+        <b>${im.median_more_pct}% më shumë</b> se më i liri. Te ${im.share_over_20}% e produkteve diferenca kalon 20%.</p>
+      <p class="lead">E llogaritëm mbi ${im.products.toLocaleString("en").replace(/,/g, " ")} produkte që gjenden në stok në të paktën tre dyqane online në Shqipëri.
+        Diferenca tipike për një produkt është ${lek(im.median_diff)}, çdo herë që e blen.</p>
+    </div>
+    ${receipt}
+  </div></section>`;
 }
 
 async function pageCategories() {
@@ -184,12 +216,18 @@ async function pageItem(id) {
   const lo = prices.length ? Math.min(...prices) : it.min_price;
   const hi = prices.length ? Math.max(...prices) : it.max_price;
   const multiShop = new Set(it.offers.map((o) => o.shop)).size > 1;
+  const cheap = live.find((o) => o.price === lo), dear = live.find((o) => o.price === hi);
+  const diffCell = (o) => !multiShop || o.currency !== it.currency ? "Në stok"
+    : o.price === lo ? `<span class="diff best">Më i liri</span>` : `<span class="diff">+${lek(o.price - lo, o.currency)}</span>`;
   const rows = it.offers.map((o) => `<tr class="${o.in_stock ? "" : "out"}">
       <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}</td>
-      <td>${o.in_stock ? "Në stok" : "S'ka gjendje"}</td>
-      <td><a class="btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}" href="${esc(o.url)}" target="_blank" rel="noopener">Hape në dyqan</a></td>
+      <td>${o.in_stock ? diffCell(o) : "S'ka gjendje"}</td>
+      <td>${shopLink(o, it.id, "produkt", `btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}`)}</td>
     </tr>`).join("");
+  const story = multiShop && cheap && dear && hi > lo
+    ? `<p class="story">Te <b>${esc(shopName(dear.shop))}</b> paguan <b class="num">${lek(hi - lo, it.currency)}</b> më shumë se te
+        <b>${esc(shopName(cheap.shop))}</b> për të njëjtin produkt. Po ta blesh 4 herë në vit, kjo bën <b class="num">${lek((hi - lo) * 4, it.currency)}</b>.</p>` : "";
   main.innerHTML = `<div class="wrap">
     <div class="page-head" style="padding-bottom:18px"><div class="crumbs"><a href="/kategori/${esc(it.cat)}" data-link>${esc(it.category_label)}</a></div></div>
     <div class="product">
@@ -201,8 +239,9 @@ async function pageItem(id) {
           ${multiShop && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
           <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
         </div>
-        ${multiShop ? ruler(it, { showHead: false, animate: true }) : ""}
-        <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>Gjendja</th><th></th></tr></thead>
+        ${story}
+        ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
+        <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
         <p class="note">${multiShop
           ? "I bashkuam këto oferta sipas emrit dhe madhësisë së produktit. Kontrollo madhësinë dhe ngjyrën te dyqani para se të blesh."
@@ -272,6 +311,54 @@ function pageExtension() {
   </div>`;
 }
 
+function pagePrivacy() {
+  document.title = "Cookies dhe privatësia | shporta";
+  const c = getCookie("sp_consent");
+  main.innerHTML = `<div class="wrap prose">
+    <div class="page-head"><h1>cookies dhe privatësia</h1><p>Çfarë mbledhim kur përdor shportën, dhe pse.</p></div>
+    <h2>Cookies të domosdoshme</h2>
+    <p><code>sp_consent</code> ruan zgjedhjen tënde për cookies, për një vit. Pa të, do të të pyesnim në çdo vizitë.</p>
+    <h2>Cookies për statistika, vetëm me lejen tënde</h2>
+    <p><code>sp_id</code> është një numër i rastësishëm, pa emër apo email. Na tregon sa vizitorë të ndryshëm klikojnë drejt dyqaneve, që të dimë sa vlen shporta për to.</p>
+    <h2>Kur kalon te një dyqan</h2>
+    <p>Lidhjet "Hape në dyqan" kalojnë nga <code>shporta.app/go/…</code>. Ruajmë cilin produkt dhe cilin dyqan zgjodhe dhe kur. Lidhjes i shtojmë
+      <code>utm_source=shporta</code>, që dyqani ta dijë se vizita erdhi nga shporta. Kjo mund të na lejojë në të ardhmen të marrim një komision nga dyqani
+      për blerjet që sjellim. Çmimi për ty nuk ndryshon kurrë, dhe renditja e dyqaneve bëhet gjithmonë sipas çmimit.</p>
+    <p>Nuk shesim të dhëna, nuk kemi llogari përdoruesish dhe nuk shohim çfarë blen te dyqani.</p>
+    <h2>Zgjedhja jote</h2>
+    <p>Tani: <b>${c === "all" ? "të gjitha cookies" : c === "essential" ? "vetëm të domosdoshmet" : "pa zgjedhje"}</b>.</p>
+    <p><button class="btn" type="button" data-consent="all">Prano të gjitha</button>
+       <button class="btn btn-ghost" type="button" data-consent="essential">Vetëm të domosdoshmet</button></p>
+  </div>`;
+}
+
+function getCookie(name) {
+  return document.cookie.split("; ").find((c) => c.startsWith(name + "="))?.split("=")[1];
+}
+function setConsent(choice) {
+  const year = 60 * 60 * 24 * 365;
+  const secure = location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `sp_consent=${choice}; Max-Age=${year}; Path=/; SameSite=Lax${secure}`;
+  if (choice === "all" && !getCookie("sp_id"))
+    document.cookie = `sp_id=${crypto.randomUUID()}; Max-Age=${year}; Path=/; SameSite=Lax${secure}`;
+  if (choice !== "all") document.cookie = "sp_id=; Max-Age=0; Path=/";
+  document.getElementById("consent")?.remove();
+  if (location.pathname === "/privatesia") pagePrivacy();
+}
+function consentBanner() {
+  if (getCookie("sp_consent")) return;
+  document.body.insertAdjacentHTML("beforeend", `<div class="consent" id="consent" role="dialog" aria-label="Cookies">
+    <p>Përdorim cookies të domosdoshme që faqja të funksionojë. Me lejen tënde, përdorim edhe një identifikues anonim për të numëruar
+      klikimet drejt dyqaneve. <a href="/privatesia" data-link>Më shumë</a></p>
+    <div><button class="btn" type="button" data-consent="all">Prano të gjitha</button>
+      <button class="btn btn-ghost" type="button" data-consent="essential">Vetëm të domosdoshmet</button></div>
+  </div>`);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-consent]");
+  if (b) setConsent(b.dataset.consent);
+});
+
 /* ---------- router ---------- */
 
 function setFoot(updated) {
@@ -298,6 +385,7 @@ async function route() {
     else if (pathname === "/kerko") await pageSearch(params);
     else if (pathname === "/dyqanet") await pageShops();
     else if (pathname === "/shtesa") pageExtension();
+    else if (pathname === "/privatesia") pagePrivacy();
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {
     main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>
@@ -326,3 +414,4 @@ document.addEventListener("submit", (e) => {
 });
 window.addEventListener("popstate", route);
 route();
+consentBanner();
