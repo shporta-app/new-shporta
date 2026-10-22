@@ -1,0 +1,151 @@
+# One shop per line: domain [| optional path prefix]. Lines starting with # are ignored.
+# Fashion, shoes, accessories, jewelry, cosmetics, perfume shops selling in Albania.
+thrift.al
+dyqan.taxi
+foleja.al
+orkida.shop
+fga.al
+crispcosmetic.com
+glowyskinshop.com
+kfarmacosmetics.al
+essenzestudio.live
+dimocenter.al
+beautyline.al
+fragrances.al
+glowstore.al
+ubuy.al
+bestseller.al
+intersport.com.al
+viadurini.al
+gjirafamall.com
+kamela.al
+buzistore.com
+madeinalbania.shop
+
+# clothing (agent)
+defacto.com.al
+lcwaikiki.al
+uspoloassn.al
+stina.al
+perlashop.al
+rogers.al
+west.al
+atra.al
+vicino.al
+polikum.al
+ditenate.al
+littlekids.al
+krejt.al
+gjejevete.al
+supermart.al
+shopaz.com | /al
+fashionandfriends.com | /al
+zara.com
+bershka.com
+pullandbear.com
+stradivarius.com
+massimodutti.com
+oysho.com
+calzedonia.com
+intimissimi.com
+tezenis.com
+shop.mango.com | /al
+# beauty (agent)
+farma-city.al
+al.loccitane.com
+inglot.al
+yvesrocher.al
+beautene.al
+farmatech.al
+farmaon.al
+goldfarmaci.com
+pinkpharm.al
+miafarmacia.al
+farmaciurgjenca1.al
+arditfarma.al
+farmacibonsai.al
+kfarma.al
+koreanbeautyalbania.com
+kbeautyalbania.com
+skincarealbania.com
+elixir.al
+beautypoint.al
+greencosmetics.al
+fantasticlook.al
+tesi-shop.com
+indritgjuzishop.com
+una.al
+www.anais.al
+www.parfumearabe.al
+www.orientaldream.al
+bighill.al
+aromadubai.al
+www.beautystore.al
+www.koralsecrets.al
+www.beautyspot.al
+skinpoeme.al
+sonar.al
+halsa.al
+sibellebeauty.al
+www.purity.al
+jeclaire.al
+vitrinna.al
+7cosmetics.al
+duocosmetics.shop
+thebodyshop.com.al
+etos.al
+# beauty (agent) - Kosovo/EUR shops found, not scraped
+# mmacosmetics.shop
+# ebc.shop
+# kaanparfumes.com
+# comexshop.com
+# aromafine.online
+# riga-pharm.com
+# beauty (agent) - skincare discovery pass
+hanskincare.com
+siren.al
+bassko.al
+pharmawest.al
+ditenate.al
+baronesha.al
+farmacieva.al
+rossmann-lala.al
+nutri.al
+skinkorea.al
+skinkorean.com
+# glowyskinkosova.com (Kosovo, EUR; not scraped)
+reamo.al
+zeroabsolute.com
+# accessories (agent): shoes, bags, jewelry, watches, eyewear, sportswear
+intersport.com.al
+sportvision.al
+buzzsneakers.al
+balkansport.com.al
+shoes.al
+colehaan.al
+bufalo.al
+xsport.al
+samsonite.al
+verdewatches.al
+watch.al
+mrwatch.al
+tufina.al
+enzoattini.al
+al.orlette.com
+kastratijewellery.al
+penelopejewels.com
+optik-a.al
+optica.al
+optikaone.com
+myoptika.al
+maxoptika.com
+lumeaoptic.al
+lentekontakti.al
+thegiftery.al
+omestore.al
+lauma.al
+crocs.al
+hotshot.al
+aksesore.al
+sportreality.al
+argjend-ora.com

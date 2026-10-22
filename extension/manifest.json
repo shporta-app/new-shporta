@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Phia AL (dev)",
+  "version": "0.1.0",
+  "description": "A është ky çmim i mirë? Krahason produktin që po shikon me dyqanet online në Shqipëri.",
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["https://*/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ],
+  "host_permissions": ["https://new-shporta.onrender.com/*", "http://127.0.0.1:8787/*"],
+  "action": { "default_title": "Phia AL" }
+}

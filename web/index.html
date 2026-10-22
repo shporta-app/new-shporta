@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="sq">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Krahaso çmimet</title>
+<style>
+:root{--bg:#fafaf7;--fg:#1b1b1f;--mut:#6b6b73;--line:#e4e4de;--ok:#1f7a4d;--acc:#3b5bdb}
+@media (prefers-color-scheme:dark){:root{--bg:#141417;--fg:#ececef;--mut:#9a9aa3;--line:#2b2b31;--ok:#5cc28f;--acc:#91a7ff}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 "Segoe UI",system-ui,sans-serif}
+main{max-width:760px;margin:auto;padding:24px 16px}
+h1{font-size:22px;margin:0 0 4px}p{color:var(--mut);margin:0 0 14px}
+input{font:inherit;width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:none;color:var(--fg)}
+.card{border-bottom:1px solid var(--line);padding:12px 0}.card b{display:block;margin-bottom:4px}
+.o{display:flex;gap:12px;padding:2px 0;font-variant-numeric:tabular-nums}.o span:first-child{min-width:84px;text-align:right}
+.best{color:var(--ok);font-weight:600}.out{opacity:.5}a{color:var(--acc)}.mut{color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<h1>A është ky çmim i mirë?</h1>
+<p>Kërko një produkt dhe shih çmimin në dyqanet online në Shqipëri: kozmetikë, parfume, veshje, këpucë, aksesorë.</p>
+<input id="q" placeholder="p.sh. cerave cleanser, cosrx snail, 345 relief cream" autofocus>
+<div id="r"></div>
+</main>
+<script>
+const fmt=(n,c)=>c==='EUR'?'€'+n.toFixed(2):Math.round(n).toLocaleString('en').replace(/,/g,' ')+' L';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let t;
+document.getElementById('q').addEventListener('input',e=>{clearTimeout(t);t=setTimeout(()=>go(e.target.value),250)});
+async function go(q){
+  const r=document.getElementById('r');
+  if(q.trim().length<3){r.innerHTML='';return}
+  const res=await fetch('/api/search?q='+encodeURIComponent(q)).then(x=>x.json()).catch(()=>[]);
+  r.innerHTML=res.length?res.map(g=>`<div class="card"><b>${esc(g.name)}</b>
+    <span class="mut">${g.offers.length} ${g.offers.length===1?'dyqan':'dyqane'}</span>
+    ${g.offers.map((o,i)=>`<div class="o ${o.in_stock?'':'out'} ${i===0&&o.in_stock&&g.offers.length>1?'best':''}">
+      <span>${fmt(o.price,o.currency)}</span><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.shop.replace(/^www\./,''))}</a>
+      <span class="mut">${o.in_stock?'':'s\'ka gjendje'}</span></div>`).join('')}</div>`).join('')
+    :'<p>Asnjë produkt.</p>';
+}
+</script>
+</body>
+</html>

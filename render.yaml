@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: new-shporta
+    runtime: python
+    plan: free
+    buildCommand: "true"
+    startCommand: python server.py
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

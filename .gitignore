@@ -1,0 +1,9 @@
+# full scrape DB (price history) stays on the scraping machine; the API ships seed/phia-api.db.gz
+data/
+seed/phia-api.db
+__pycache__/
+*.log
+report.html
+probe*.json
+woo_rescrape.txt
+outreach/
