@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from match import parse, same_size
+from match import GENERIC, parse, same_size
 
 HERE = Path(__file__).parent
 WEB = HERE / "web"
@@ -63,7 +63,7 @@ def meta(key):
 
 CATEGORIES = dict(ast.literal_eval(meta("categories") or "[]"))
 COLS = "id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id"
-ITEM_COLS = "id, title, image, cat, shops, in_stock_shops, min_price, max_price, currency, save_pct"
+ITEM_COLS = "id, title, image, cat, shops, in_stock_shops, min_price, max_price, currency, save_pct, size_note"
 
 
 def fold(s):
@@ -252,10 +252,15 @@ def shops():
 def lookup(title, price=None, currency="ALL", url=""):
     key, size = parse(title or "")
     page_host = urlparse(url).netloc.lower().removeprefix("www.") if url else ""
-    cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))] if key else []
-    exact = [o for o in cands if size is None or o["size_val"] is None or same_size(size, (o["size_val"], o["size_unit"]))]
-    if size is None and len({(o["size_val"], o["size_unit"]) for o in exact if o["size_val"]}) > 1:
-        exact = []  # the page doesn't say which size, and we sell several: don't guess
+    # Same rules as match.py: a specific name (3+ words, not only generic words like "fustan midi"),
+    # and sizes stated on both sides and equal; with no size anywhere, prices must agree within 25%.
+    words = key.split()
+    specific = len(words) >= 3 and any(w not in GENERIC for w in words)
+    cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))] if specific else []
+    if size is not None:
+        exact = [o for o in cands if o["size_val"] is not None and same_size(size, (o["size_val"], o["size_unit"]))]
+    else:
+        exact = [o for o in cands if o["size_val"] is None and price and price / 1.25 <= o["price"] <= price * 1.25]
     offers = [o for o in one_per_shop(exact) if o["shop"].removeprefix("www.") != page_host]
     out = {"query": {"title": title, "price": price, "currency": currency, "key": key, "size": size},
            "exact": [public(o) for o in offers[:20]], "verdict": verdict(price, currency, offers)}

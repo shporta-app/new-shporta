@@ -13,6 +13,32 @@ S = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(S)
 
 
+def _lenient_jsonld_products(html):
+    """scrape.jsonld_products, but json.loads(strict=False): some platforms (buzzsneakers.al, sportvision.al) put raw
+    tabs/newlines inside JSON-LD strings, which the strict parser rejects, silently dropping those products."""
+    import json
+    import re
+    for block in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', html, re.S | re.I):
+        try:
+            data = json.loads(block.strip(), strict=False)
+        except ValueError:
+            continue
+        stack = [data]
+        while stack:
+            d = stack.pop()
+            if isinstance(d, list):
+                stack.extend(d)
+            elif isinstance(d, dict):
+                t = d.get("@type")
+                if t == "Product" or (isinstance(t, list) and "Product" in t):
+                    yield d
+                stack.extend(v for k, v in d.items() if k in ("@graph", "mainEntity", "itemListElement", "item", "hasVariant"))
+
+
+# This module's private copy of scrape.py (S) uses the lenient parser; scrape.py itself is unchanged.
+S.jsonld_products = _lenient_jsonld_products
+
+
 def buffered(rows, size=200):
     buf = []
     for r in rows:

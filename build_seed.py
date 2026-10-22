@@ -78,7 +78,7 @@ def main():
         CREATE TABLE matches (product_id INTEGER PRIMARY KEY, group_id TEXT);
         CREATE TABLE shops (domain TEXT PRIMARY KEY, category TEXT, products INTEGER);
         CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT, image TEXT, cat TEXT, shops INTEGER, in_stock_shops INTEGER,
-                            min_price REAL, max_price REAL, currency TEXT, save_pct INTEGER, search TEXT);
+                            min_price REAL, max_price REAL, currency TEXT, save_pct INTEGER, search TEXT, size_note INTEGER);
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
         CREATE VIRTUAL TABLE words USING fts5(name_key, content='products', content_rowid='id', tokenize='unicode61');
     """)
@@ -123,10 +123,13 @@ def main():
         title = min((o[2] for o in offs), key=lambda t: (abs(len(t) - 45), t))
         image = next((o[5] for o in offs if o[5]), None)
         search = fold(" ".join({o[2] for o in offs}) + " " + " ".join(o[3] or "" for o in offs[:3]))
-        items.append((iid, title, image, cat, len(shops), len(live_shops), lo, hi, pool[0][8], save, search[:600]))
+        # 0: every shop states the size, 1: some don't, 2: none do (shown as a warning on the product page)
+        sized = [o[11] is not None for o in offs]
+        size_note = 0 if all(sized) else 2 if not any(sized) else 1
+        items.append((iid, title, image, cat, len(shops), len(live_shops), lo, hi, pool[0][8], save, search[:600], size_note))
 
     dst.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-    dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?)", items)
+    dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", items)
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())
     dst.executemany("INSERT INTO shops VALUES (?,?,?)",
                     src.execute("SELECT domain, category, products FROM shops WHERE status IN ('ok','error')"))

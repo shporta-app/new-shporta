@@ -7,15 +7,23 @@ How a product is identified:
               so "Dr.Althea – 345 Relief Cream" == "DR. ALTHEA 345 Relief Cream" == "Dr. Althea 345 Relief Cream - 50"
   size      = "50ml", or a bare "- 50" suffix (Shopify variant titles), or unknown
 
-Two rows are the same product when the name keys are equal and the sizes don't contradict each other. A row with
-an unknown size joins the group only when that name has exactly one known size; otherwise it stays alone, because
-we can't tell which size it is. Different words (cream vs cream mist vs cream mask) never match.
+Two rows are the same product only when all of these hold:
+  1. the name keys are equal (different words never match: cream / cream mist / cream mask / set / tester / refill)
+  2. the name is specific: it names a brand (from the shops' brand fields, or a word that opens product names in
+     several shops) or a model code, and has at least three words. Generic names like "Këpucë me takë" or
+     "Pantallona të shkurtra" in two shops are never treated as one product
+  3. the sizes don't contradict each other; a row with no size joins only when the name exists in exactly one size
+     AND its price is close to that size's price (a shop that writes "Cream" but sells the 15 ml stays out)
+  4. its price is plausible for the group: under half or over double the group's typical price means a different
+     size or pack, so that row is dropped
+  5. the shop doesn't sell several different products under the same name (we couldn't tell which one is meant)
 Precision over recall: a wrong match shows a false "cheaper elsewhere", which is worse than a missed one.
 """
 import collections
 import hashlib
 import re
 import sqlite3
+import statistics
 import unicodedata
 from pathlib import Path
 
@@ -23,8 +31,23 @@ HERE = Path(__file__).parent
 
 STOP = {
     "the", "and", "for", "with", "of", "de", "la", "le", "di", "per", "me", "dhe", "e", "i", "te", "ne", "nga",
-    "a", "an", "in", "on", "by", "x", "new", "ri", "set", "pcs", "cope",
+    "a", "an", "in", "on", "by", "x", "pcs", "cope",
 }
+# Words that describe a product but never identify one: types, colours, materials, people. Never a brand.
+GENERIC = set("""
+bluze bluza maice kemishe fustan fund xhinse xhins pantallona shkurtra xhakete xhup pallto triko pulover kardigan
+jelek kostum tuta pizhame breke sutjena corape rroba banjo kepuce atlete cizme sandale papuce take cante canta
+portofol rrip shall kapele ore ora syze unaze varese vathe byzylyk zinxhir bizhuteri set kit pako cope
+dress skirt shirt tshirt top jeans pants trousers shorts jacket coat sweater hoodie socks shoes sneakers boots
+sandals slippers bag bags wallet belt scarf hat watch sunglasses ring necklace earrings bracelet
+krem cream creme serum toner tonik lotion locion gel xhel maske mask shampo shampoo balsam conditioner sapun soap
+spray oil vaj parfum parfume perfume deodorant pastrues cleanser scrub balm lipstick mascara pudra powder
+femra meshkuj burra gra vajza djem femije bebe baby kids men women woman man unisex junior
+zeze zi bardhe kuqe blu gri roze jeshile kafe bezhe portokalli verdhe vjollce ari argjend
+black white red blue grey gray pink green brown beige orange yellow purple gold silver navy
+pambuk lesh lekure leather cotton wool denim mini maxi midi long short gjate shkurter
+per me dhe nga pa new ri original classic basic sport sportive
+""".split())
 UNIT = {"ml": "ml", "l": "l", "lt": "l", "g": "g", "gr": "g", "gram": "g", "kg": "kg", "oz": "oz", "fl": "oz",
         "caps": "caps", "kapsula": "caps", "tab": "tab", "tableta": "tab"}
 SIZE_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(ml|lt|l|gr|gram|g|kg|fl\.?\s*oz|oz|caps|kapsula|tableta|tab)\b")
@@ -62,31 +85,92 @@ def main():
     con.execute("CREATE TABLE IF NOT EXISTS matches (product_id INTEGER PRIMARY KEY, group_id TEXT NOT NULL)")
     con.execute("CREATE INDEX IF NOT EXISTS matches_group ON matches(group_id)")
 
+    price_of = {}
     by_name = collections.defaultdict(list)
-    for pid, shop, title in con.execute("SELECT id, shop, title FROM products WHERE price > 0"):
+    for pid, shop, title, price, cur in con.execute("SELECT id, shop, title, price, currency FROM products WHERE price > 0"):
         key, size = parse(title)
+        price_of[pid] = (price, cur)
         if len(key.split()) >= 2:  # one word ("Bluza") is too vague to match on
             by_name[key].append((pid, shop, size))
 
+    # rule 2: brand words = tokens of the shops' brand fields, and words that open product names in 2+ shops
+    brands = collections.Counter()
+    for (b,) in con.execute("SELECT brand FROM products WHERE brand IS NOT NULL AND brand != ''"):
+        for w in re.findall(r"[a-z0-9]+", fold(b)):
+            brands[w] += 1
+    openers = collections.defaultdict(set)
+    for pid, shop, title in con.execute("SELECT id, shop, title FROM products WHERE price > 0"):
+        first = re.findall(r"[a-z0-9]+", fold(title))[:1]
+        if first:
+            openers[first[0]].add(shop)
+    shop_words = {w for (d,) in con.execute("SELECT domain FROM shops") for w in re.findall(r"[a-z0-9]+", d)}
+    brand_words = {w for w, n in brands.items() if n >= 2} | {w for w, shops in openers.items() if len(shops) >= 2}
+    brand_words = {w for w in brand_words if len(w) >= 2 and not w.isdigit() and w not in GENERIC and w not in shop_words}
+
+    def specific(key):
+        words = key.split()
+        code = any(re.search(r"\d", w) and re.search(r"[a-z]", w) and len(w) >= 3 for w in words)
+        return (code or len(words) >= 3) and (code or any(w in brand_words for w in words))
+
+    stats = collections.Counter()
     rows = []
     for key, items in by_name.items():
         if len({shop for _, shop, _ in items}) < 2:
+            continue
+        if not specific(key):
+            stats["generic name"] += 1
             continue
         sizes = []
         for _, _, s in items:
             if s and not any(same_size(s, x) for x in sizes):
                 sizes.append(s)
+        # typical price of each known size, and how many shops state it
+        size_price, size_shops = {}, {}
+        for x in sizes:
+            ps = [(price_of[pid][0], shop) for pid, shop, s in items if s and same_size(s, x)]
+            size_price[x] = statistics.median(p for p, _ in ps)
+            size_shops[x] = len({sh for _, sh in ps})
+        unsized = []
         for pid, shop, s in items:
             if s:
                 target = next(x for x in sizes if same_size(s, x))
-            elif len(sizes) == 1:
+            elif len(sizes) == 1 and size_shops[sizes[0]] >= 2:
+                # rule 3: a row without a size joins only when 2+ shops agree that the product comes in that size
+                # and its price fits that size; otherwise it may well be the 15 ml of a 50 ml cream
+                ref = size_price[sizes[0]]
+                if not (ref / 1.3 <= price_of[pid][0] <= ref * 1.3):
+                    stats["no size, price off"] += 1
+                    continue
                 target = sizes[0]
-            elif not sizes:
-                target = None
             else:
-                continue  # unknown size while the name exists in several sizes: can't place it
+                unsized.append((pid, shop))
+                continue
             gid = hashlib.md5(f"{key}|{target}".encode()).hexdigest()[:12]
             rows.append((pid, gid))
+        # rows that state no size can still be compared with each other when their prices agree closely
+        if len({shop for _, shop in unsized}) >= 2:
+            ps = [price_of[pid][0] for pid, _ in unsized]
+            if max(ps) <= min(ps) * 1.25:
+                gid = hashlib.md5(f"{key}|unknown".encode()).hexdigest()[:12]
+                rows.extend((pid, gid) for pid, _ in unsized)
+            else:
+                stats["no size, prices disagree"] += len(unsized)
+        elif unsized:
+            stats["no size, nothing to compare"] += len(unsized)
+
+    # rule 4: drop rows whose price is implausible for the group (per currency)
+    by_group = collections.defaultdict(list)
+    for pid, gid in rows:
+        by_group[(gid, price_of[pid][1])].append(pid)
+    keep = set()
+    for (gid, cur), pids in by_group.items():
+        med = statistics.median(price_of[p][0] for p in pids)
+        for p in pids:
+            if med / 2 <= price_of[p][0] <= med * 2:
+                keep.add(p)
+            else:
+                stats["price implausible"] += 1
+    rows = [(p, g) for p, g in rows if p in keep]
 
     # A shop that sells several *different* products under one name+size (Rogers: many "ATLETE CALVIN KLEIN
     # JEANS - BLACK / 40" at different URLs and prices) can't be matched: we wouldn't know which one is meant.
@@ -111,6 +195,7 @@ def main():
     con.commit()
     groups = len({g for _, g in rows})
     print(f"{groups:,} products matched across 2+ shops ({len(rows):,} shop listings)")
+    print("left out:", dict(stats))
 
 
 if __name__ == "__main__":

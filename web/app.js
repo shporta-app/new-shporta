@@ -243,8 +243,11 @@ async function pageItem(id) {
         ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
         <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
+        ${multiShop && it.size_note ? `<p class="size-warn">${it.size_note === 2
+          ? "Asnjë nga këto dyqane nuk e tregon madhësinë në emrin e produktit. I krahasuam sepse emri është i njëjtë dhe çmimet janë afër njëri-tjetrit. Kontrollo madhësinë te dyqani."
+          : "Disa dyqane nuk e tregojnë madhësinë. I përfshimë vetëm kur çmimi përputhet me madhësinë që tregojnë dyqanet e tjera. Kontrollo madhësinë te dyqani."}</p>` : ""}
         <p class="note">${multiShop
-          ? "I bashkuam këto oferta sipas emrit dhe madhësisë së produktit. Kontrollo madhësinë dhe ngjyrën te dyqani para se të blesh."
+          ? "Krahasojmë vetëm të njëjtin produkt: i njëjti emër, e njëjta markë dhe e njëjta madhësi. Emri i saktë te çdo dyqan është poshtë çmimit, që ta kontrollosh vetë."
           : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}</p>
       </div>
     </div>
