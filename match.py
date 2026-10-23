@@ -298,6 +298,7 @@ def main():
     field_brands = {w for w, n in brands.items() if n >= 2 and len(w) >= 3 and w not in GENERIC}
     shop_cat = dict(con.execute("SELECT domain, category FROM shops"))
     beauty = {k for k, items in by_name.items() if all(shop_cat.get(s) in ("beauty", "perfume") for _, s, _ in items)}
+    shops_of = {k: {s for _, s, _ in items} for k, items in by_name.items()}
     for key in list(by_name):
         words = set(key.split())
         core = words - DESCRIPTIONS - TYPE_WORDS_BEAUTY - key_brands[key]
@@ -317,6 +318,8 @@ def main():
             rest = extra - DESCRIPTIONS - key_brands[key] - (set() if typed else TYPE_WORDS_BEAUTY)
             if len(rest) > 1 or any(not line_word(w) or w in field_brands for w in rest):
                 continue  # another product: "Intense", "Refill", a shade number, a second line word…
+            if rest and shops_of[key] & shops_of[t]:
+                continue  # one shop sells both: "Collagen Cream" and "Collagen Deep Cream" are two products
             ok.append(t)
             lines.add(frozenset(extra - DESCRIPTIONS - key_brands[key]))  # a type it adds counts as its line too
         if len(lines - {frozenset()}) > 1:
@@ -346,6 +349,10 @@ def main():
         members = {k for k in members if main and (key_brands[k] or set(k.split())) & main}
         if canon not in members:
             continue
+        # a name that differs by more than descriptions, sold by a shop that also sells the chosen name, is another
+        # product of that shop (the chains above can link "Cleansing Oil Mild" to "Cleansing Oil" through a third name)
+        plain_shops = set().union(*(shops_of[k] for k in members if k == canon or not rest(k)))
+        members = {k for k in members if k == canon or not (rest(k) and shops_of[k] & plain_shops)}
         rests = {k: rest(k) for k in members - {canon}}
         line = set().union(*rests.values()) if rests else set()
         if len(line) > 1 or any(not line_word(w) for w in line):
