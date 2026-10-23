@@ -301,12 +301,23 @@ def lookup(title, price=None, currency="ALL", url=""):
     #    (several sizes on one page: the page's price says which one is selected)
     mine = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE page = ?", (page_key(url),))] if url else []
     if mine:
-        here = min(mine, key=lambda o: abs(o["price"] - price) if price else 0)
+        exact_price = [o for o in mine if price and abs(o["price"] - price) < 1]
+        compared = [o for o in mine if o["item_id"].startswith("g")]
+        if len(exact_price) == 1 and (exact_price[0]["item_id"].startswith("g") or len(mine) == 1):
+            here = exact_price[0]  # the page's price names the size the shopper picked
+        elif compared:
+            # several sizes and the page only says "from 880 L": compare the size other shops sell
+            here = max(compared, key=lambda o: db().execute(
+                "SELECT COUNT(DISTINCT shop) FROM products WHERE item_id = ?", (o["item_id"],)).fetchone()[0])
+        else:
+            here = min(mine, key=lambda o: abs(o["price"] - price) if price else 0)
         if here["item_id"].startswith("g"):
             exact = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ?", (here["item_id"],))]
             offers = [o for o in one_per_shop(exact) if o["shop"].removeprefix("www.") != page_host]
-            return {"query": {"title": title, "price": price, "currency": currency, "known_page": True},
-                    "exact": [public(o) for o in offers[:20]], "verdict": verdict(price, currency, offers),
+            size_label = f"{here['size_val']:g} {here['size_unit'] or 'ml'}" if here["size_val"] and len(mine) > 1 else None
+            return {"query": {"title": title, "price": here["price"], "currency": currency, "known_page": True,
+                              "size_label": size_label},
+                    "exact": [public(o) for o in offers[:20]], "verdict": verdict(here["price"], currency, offers),
                     "dupes": dupes_of(here["item_id"], limit=4)}
         key, size = here["name_key"] or key, (here["size_val"], here["size_unit"]) if here["size_val"] else size
     # 2. otherwise by name: same rules as match.py

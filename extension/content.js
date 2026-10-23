@@ -112,7 +112,7 @@
       .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;cursor:pointer;color:#888}
       .f{color:#888;font-size:11px;margin-top:6px}</style>
       <div class="p" role="dialog" aria-label="shporta"><button class="x" title="Mbyll" aria-label="Mbyll">×</button>
-        <div class="brand">shporta</div>${head}${list}
+        <div class="brand">shporta${data.query && data.query.size_label ? ` · për ${esc(data.query.size_label)}` : ""}</div>${head}${list}
         ${dupeRows ? `<h4>Dupe: jo i njëjti produkt, bën të njëjtën punë</h4>${dupeRows}` : ""}
         <div class="f">Çmimet nga dyqanet online shqiptare, në shporta.app</div></div>`;
     root.querySelector(".x").onclick = () => el.remove();
