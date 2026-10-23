@@ -6,7 +6,10 @@ Tables:
   products  current offers with match key, size and our category
   matches   product -> group (same product in 2+ shops, from match.py)
   items     what the website lists: one row per matched product (all its shops) or per single product page
-            (variants of one page collapsed), with lowest/highest price and how many shops sell it
+            (variants of one page collapsed), with lowest/highest price and how many shops sell it.
+            Prices, the cheapest and "save up to" count only offers whose title states the product's size
+            (products.in_compare = 1); shops that sell the product without stating the size are listed apart
+            (extra_shops) and never count as the cheapest.
   shops     shop directory
 The full data/phia.db (price history, raw data) stays on the machine that scrapes.
 """
@@ -20,7 +23,7 @@ import unicodedata
 from pathlib import Path
 
 import dupes
-from match import parse
+from match import parse, size_label
 
 HERE = Path(__file__).parent
 SRC = HERE / "data" / "phia.db"
@@ -45,11 +48,13 @@ def main():
     dst.executescript("""
         CREATE TABLE products (id INTEGER PRIMARY KEY, shop TEXT, title TEXT, brand TEXT, url TEXT, image TEXT,
                                price REAL, regular_price REAL, currency TEXT, in_stock INTEGER,
-                               name_key TEXT, size_val REAL, size_unit TEXT, cat TEXT, item_id TEXT, page TEXT);
+                               name_key TEXT, size_val REAL, size_unit TEXT, cat TEXT, item_id TEXT, page TEXT,
+                               in_compare INTEGER);
         CREATE TABLE matches (product_id INTEGER PRIMARY KEY, group_id TEXT);
         CREATE TABLE shops (domain TEXT PRIMARY KEY, category TEXT, products INTEGER);
         CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT, image TEXT, cat TEXT, shops INTEGER, in_stock_shops INTEGER,
-                            min_price REAL, max_price REAL, currency TEXT, save_pct INTEGER, search TEXT, size_note INTEGER);
+                            min_price REAL, max_price REAL, currency TEXT, save_pct INTEGER, search TEXT, size_note INTEGER,
+                            size TEXT, extra_shops INTEGER);
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
         CREATE VIRTUAL TABLE words USING fts5(name_key, content='products', content_rowid='id', tokenize='unicode61');
     """)
@@ -66,7 +71,7 @@ def main():
         # one listing item per matched product, otherwise per product page (Shopify ?variant= rows share a page)
         item = "g" + gid if gid else "p" + hashlib.md5(f"{shop}|{(url or str(pid)).split('?')[0]}".encode()).hexdigest()[:12]
         rows.append([pid, shop, title, brand, url, image, price, reg, cur, stock, key,
-                     size[0] if size else None, size[1] if size else None, cat, item, page_key(url)])
+                     size[0] if size else None, size[1] if size else None, cat, item, page_key(url), 1])
 
     # items: aggregate offers
     by_item = collections.defaultdict(list)
@@ -78,29 +83,39 @@ def main():
         cat = cats.most_common(1)[0][0]
         for o in offs:  # a matched product gets one category for all its shops
             o[13] = cat
-        lek = [o for o in offs if o[8] == "ALL"]
-        pool = lek or offs
+        # a matched product where some shops state the size: only those are compared
+        sized = [o for o in offs if o[11] is not None]
+        main = sized if iid.startswith("g") and sized else offs
+        for o in offs:
+            o[16] = 1 if o in main else 0
+        extra_shops = len({o[1] for o in offs} - {o[1] for o in main})
+        size = None
+        if sized:
+            common = collections.Counter((o[11], o[12]) for o in sized if o[12]) or collections.Counter((o[11], o[12]) for o in sized)
+            size = size_label(*common.most_common(1)[0][0])
+        lek = [o for o in main if o[8] == "ALL"]
+        pool = lek or main
         live = [o for o in pool if o[9]] or pool
         prices = [o[6] for o in live]
         lo, hi = min(prices), max(prices)
-        shops = {o[1] for o in offs}
-        live_shops = {o[1] for o in offs if o[9]}
+        shops = {o[1] for o in main}
+        live_shops = {o[1] for o in main if o[9]}
         # per shop take its cheapest offer, so a shop's several sizes don't inflate the spread for single-shop items
         per_shop_min = {}
         for o in live:
             per_shop_min[o[1]] = min(per_shop_min.get(o[1], o[6]), o[6])
         save = round((max(per_shop_min.values()) - min(per_shop_min.values())) / max(per_shop_min.values()) * 100) \
             if len(per_shop_min) >= 2 else 0
-        title = min((o[2] for o in offs), key=lambda t: (abs(len(t) - 45), t))
+        title = min((o[2] for o in main), key=lambda t: (abs(len(t) - 45), t))
         image = next((o[5] for o in offs if o[5]), None)
         search = fold(" ".join({o[2] for o in offs}) + " " + " ".join(o[3] or "" for o in offs[:3]))
         # 0: every shop states the size, 1: some don't, 2: none do (shown as a warning on the product page)
-        sized = [o[11] is not None for o in offs]
-        size_note = 0 if all(sized) else 2 if not any(sized) else 1
-        items.append((iid, title, image, cat, len(shops), len(live_shops), lo, hi, pool[0][8], save, search[:600], size_note))
+        size_note = 0 if len(sized) == len(offs) else 2 if not sized else 1
+        items.append((iid, title, image, cat, len(shops), len(live_shops), lo, hi, pool[0][8], save, search[:600], size_note,
+                      size, extra_shops))
 
-    dst.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-    dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", items)
+    dst.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", items)
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())
     dst.executemany("INSERT INTO shops VALUES (?,?,?)",
                     src.execute("SELECT domain, category, products FROM shops WHERE status IN ('ok','error')"))

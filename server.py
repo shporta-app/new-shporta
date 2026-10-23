@@ -29,7 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import dupes
-from match import GENERIC, parse, same_size
+from match import GENERIC, parse, same_size, size_by_price, size_label
 
 HERE = Path(__file__).parent
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -65,7 +65,8 @@ def meta(key):
 
 
 CATEGORIES = dict(ast.literal_eval(meta("categories") or "[]"))
-COLS = "id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id"
+COLS = ("id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id,"
+        " in_compare")
 
 
 def page_key(url):
@@ -73,7 +74,7 @@ def page_key(url):
     for pre in ("https://", "http://"):
         u = u.removeprefix(pre)
     return u.removeprefix("www.") or None
-ITEM_COLS = "id, title, image, cat, shops, in_stock_shops, min_price, max_price, currency, save_pct, size_note"
+ITEM_COLS = "id, title, image, cat, shops, in_stock_shops, min_price, max_price, currency, save_pct, size_note, size, extra_shops"
 
 
 def fold(s):
@@ -101,8 +102,11 @@ def verdict(price, currency, offers):
 
 
 def public(o):
-    return {k: o[k] for k in ("id", "shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
-            if k in o.keys()} | ({"item": o["item_id"]} if "item_id" in o.keys() else {})
+    out = {k: o[k] for k in ("id", "shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
+           if k in o.keys()} | ({"item": o["item_id"]} if "item_id" in o.keys() else {})
+    if "size_val" in o.keys():
+        out["size"] = size_label(o["size_val"], o["size_unit"])  # what this shop's own listing says; None = not stated
+    return out
 
 
 def item_rows(sql, args):
@@ -190,7 +194,8 @@ def routine():
 
 
 def offers_for(item_id):
-    offs = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ?", (item_id,))]
+    """The price comparison: one offer per shop, only listings that state the product's size (build_seed.py)."""
+    offs = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ? AND in_compare = 1", (item_id,))]
     if item_id.startswith("g"):
         return [public(o) for o in one_per_shop(offs)]
     # a single shop's page: list its sizes/colours
@@ -258,6 +263,10 @@ def item(item_id):
         return None
     it = dict(r)
     it["offers"] = offers_for(item_id)
+    # shops selling it without stating the size: listed apart, never the cheapest, never in "save up to"
+    main_shops = {o["shop"] for o in it["offers"]}
+    it["unconfirmed"] = [public(o) for o in one_per_shop([dict(x) for x in db().execute(
+        f"SELECT {COLS} FROM products WHERE item_id = ? AND in_compare = 0", (item_id,))]) if o["shop"] not in main_shops]
     first = db().execute("SELECT name_key FROM products WHERE item_id = ? LIMIT 1", (item_id,)).fetchone()
     cur = it["currency"]
     sim = similar(first[0] if first else "", it["min_price"], cur, limit=12)
@@ -295,49 +304,82 @@ def shops():
 # ------------------------------------------------------------------ extension endpoint
 
 def lookup(title, price=None, currency="ALL", url=""):
+    """What the extension shows for the product page a shopper has open, in three separate parts:
+       exact    the same product in the same size at other shops (the only thing the price verdict uses)
+       similar  only when there's no exact match: other products with most of the same words, never "the same"
+       dupes    a different product that does the same job for less
+    query.size_label is the size compared; query.size_assumed is true when the page itself doesn't state it."""
     key, size = parse(title or "")
     page_host = urlparse(url).netloc.lower().removeprefix("www.") if url else ""
-    # Same rules as match.py: a specific name (3+ words, not only generic words like "fustan midi"),
-    # and sizes stated on both sides and equal; with no size anywhere, prices must agree within 25%.
+    q = {"title": title, "price": price, "currency": currency, "size_label": size_label(*size) if size else None,
+         "size_assumed": False}
+
+    def answer(offers, item_id=None):
+        offers = [o for o in one_per_shop(offers) if o["shop"].removeprefix("www.") != page_host]  # never the shop you're on
+        item_id = item_id or next((o["item_id"] for o in offers if o["item_id"].startswith("g")), None)
+        out = {"query": q, "exact": [public(o) for o in offers[:20]], "verdict": verdict(q["price"], currency, offers),
+               "item": item_id}
+        if item_id:  # shops selling it without stating the size: only counted, the product page lists them
+            out["unconfirmed"] = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()[0] or 0
+        if not offers:
+            out["similar"] = [public(o) for o in similar(key, price, currency) if o["shop"].removeprefix("www.") != page_host]
+        out["dupes"] = dupes_of(item_id, limit=4) if item_id else page_dupes(title, price, currency, offers)
+        return out
+
+    def compared(item_id):
+        return [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ? AND in_compare = 1", (item_id,))]
+
     # 1. a page we collected: we know exactly which product it is, whatever name the page shows
     #    (several sizes on one page: the page's price says which one is selected)
     mine = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE page = ?", (page_key(url),))] if url else []
     if mine:
         exact_price = [o for o in mine if price and abs(o["price"] - price) < 1]
-        compared = [o for o in mine if o["item_id"].startswith("g")]
+        matched = [o for o in mine if o["item_id"].startswith("g")]
         if len(exact_price) == 1 and (exact_price[0]["item_id"].startswith("g") or len(mine) == 1):
             here = exact_price[0]  # the page's price names the size the shopper picked
-        elif compared:
-            # several sizes and the page only says "from 880 L": compare the size other shops sell
-            here = max(compared, key=lambda o: db().execute(
-                "SELECT COUNT(DISTINCT shop) FROM products WHERE item_id = ?", (o["item_id"],)).fetchone()[0])
+        elif matched:
+            # several sizes and the page only says "from 880 L": compare the size most shops sell, and say which
+            here = max(matched, key=lambda o: db().execute(
+                "SELECT COUNT(DISTINCT shop) FROM products WHERE item_id = ? AND in_compare = 1", (o["item_id"],)).fetchone()[0])
+            q["price"] = here["price"]
         else:
             here = min(mine, key=lambda o: abs(o["price"] - price) if price else 0)
         if here["item_id"].startswith("g"):
-            exact = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ?", (here["item_id"],))]
-            offers = [o for o in one_per_shop(exact) if o["shop"].removeprefix("www.") != page_host]
-            size_label = f"{here['size_val']:g} {here['size_unit'] or 'ml'}" if here["size_val"] and len(mine) > 1 else None
-            return {"query": {"title": title, "price": here["price"], "currency": currency, "known_page": True,
-                              "size_label": size_label},
-                    "exact": [public(o) for o in offers[:20]], "verdict": verdict(here["price"], currency, offers),
-                    "dupes": dupes_of(here["item_id"], limit=4)}
+            it = db().execute("SELECT size FROM items WHERE id = ?", (here["item_id"],)).fetchone()
+            q["size_label"] = it["size"] if it else None
+            q["size_assumed"] = not here["in_compare"]  # this shop doesn't write the size; we matched it by price
+            q["known_page"] = True
+            return answer(compared(here["item_id"]), here["item_id"])
         key, size = here["name_key"] or key, (here["size_val"], here["size_unit"]) if here["size_val"] else size
-    # 2. otherwise by name: same rules as match.py
+
+    # 2. otherwise by name, with match.py's rules: a specific name, and the same size
     words = key.split()
-    specific = len(words) >= 3 and any(w not in GENERIC for w in words)
-    cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))] if specific else []
+    if not (len(words) >= 3 and any(w not in GENERIC for w in words)):
+        return answer([])
+    cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))]
+    sized = [o for o in cands if o["size_val"] is not None]
     if size is not None:
-        exact = [o for o in cands if o["size_val"] is not None and same_size(size, (o["size_val"], o["size_unit"]))]
-    else:
-        exact = [o for o in cands if o["size_val"] is None and price and price / 1.25 <= o["price"] <= price * 1.25]
-    offers = [o for o in one_per_shop(exact) if o["shop"].removeprefix("www.") != page_host]
-    out = {"query": {"title": title, "price": price, "currency": currency, "key": key, "size": size},
-           "exact": [public(o) for o in offers[:20]], "verdict": verdict(price, currency, offers)}
-    if not offers:
-        out["similar"] = [public(o) for o in similar(key, price, currency)
-                          if o["shop"].removeprefix("www.") != page_host]  # never the shop you're on
-    out["dupes"] = page_dupes(title, price, currency, offers)
-    return out
+        return answer([o for o in sized if same_size(size, (o["size_val"], o["size_unit"]))])
+    # the page doesn't state a size: compare only when the size is certain from the other shops
+    options = []
+    for o in sorted(sized, key=lambda o: o["size_unit"] is None):  # "55 g" rather than a bare "55"
+        if not any(same_size((o["size_val"], o["size_unit"]), x) for x in options):
+            options.append((o["size_val"], o["size_unit"]))
+    medians = {x: statistics.median(o["price"] for o in sized if same_size(x, (o["size_val"], o["size_unit"])))
+               for x in options}
+    pick = None
+    if len(options) == 1 and len({o["shop"] for o in sized}) >= 2 and price and             medians[options[0]] / 1.5 <= price <= medians[options[0]] * 1.5:
+        pick = options[0]  # the product comes in one size and the price fits it
+    elif len(options) > 1 and price:
+        pick = size_by_price(price, medians)  # several sizes: only when the price clearly says which one
+    if pick:
+        q["size_label"], q["size_assumed"] = size_label(*pick), True
+        return answer([o for o in sized if same_size(pick, (o["size_val"], o["size_unit"]))])
+    if not options and price:
+        # no shop states a size: the same name at nearly the same price (as match.py's unsized groups)
+        return answer([o for o in cands if price / 1.25 <= o["price"] <= price * 1.25
+                       and not set(words) & {"edp", "edt", "parfum", "perfume", "extrait", "cologne"}])
+    return answer([])
 
 
 def page_dupes(title, price, currency, offers):

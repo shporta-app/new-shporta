@@ -269,3 +269,11 @@ a:hover { color: var(--violet-deep); }
 .tab { text-decoration: none; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 7px 16px; font-weight: 600; }
 .tab[aria-current="page"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 @media (max-width: 560px) { .dp { grid-template-columns: 1fr; } }
+
+/* exact comparison vs everything else */
+.size-line { margin: 6px 0 14px; font-size: 15px; color: var(--muted); }
+.size-line b { color: #14121F; background: var(--lime); padding: 1px 8px; border-radius: 999px; font-weight: 700; }
+.tile .size { font-size: 13px; color: var(--muted); }
+h2.sub { font-size: 18px; margin: 28px 0 0; }
+.offers.unconfirmed td { color: var(--muted); }
+.section.apart { border-top: 2px dashed var(--line); }

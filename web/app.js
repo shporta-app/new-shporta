@@ -55,7 +55,7 @@ function tile(it) {
   return `<a class="tile" href="/produkt/${esc(it.id)}" data-link>
     <span class="pic">${img(it.image, it.title)}</span>
     ${it.shops > 1 ? `<span class="chip">${plural(it.shops, "dyqan", "dyqane")}</span>` : ""}
-    <span class="name">${esc(it.title)}</span>
+    <span class="name">${esc(it.title)}</span>${it.size ? `<span class="size">${esc(it.size)}</span>` : ""}
     <span class="meta"><span class="num">${it.shops > 1 ? "nga " : ""}${lek(it.min_price, it.currency)}</span>${range}</span>
   </a>`;
 }
@@ -63,7 +63,7 @@ function tile(it) {
 function deal(it) {
   return `<a class="deal" href="/produkt/${esc(it.id)}" data-link>
     ${img(it.image, it.title)}
-    <span><span class="name">${esc(it.title)}</span>
+    <span><span class="name">${esc(it.title)}${it.size ? ` <small>${esc(it.size)}</small>` : ""}</span>
       <span class="range">${lek(it.min_price)} deri ${lek(it.max_price)} në ${plural(it.in_stock_shops, "dyqan", "dyqane")}</span></span>
     <span class="save">−${it.save_pct}%</span>
   </a>`;
@@ -255,6 +255,13 @@ async function pageItem(id) {
       <td>${o.in_stock ? diffCell(o) : "S'ka gjendje"}</td>
       <td>${shopLink(o, it.id, "produkt", `btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}`)}</td>
     </tr>`).join("");
+  // shops that sell it without writing the size: shown, but never compared (we can't confirm it's the same size)
+  const unconfirmed = (it.unconfirmed || []).map((o) => `<tr class="${o.in_stock ? "" : "out"}">
+      <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
+      <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
+      <td>${o.in_stock ? "Madhësia s'tregohet" : "S'ka gjendje"}</td>
+      <td>${shopLink(o, it.id, "produkt", "btn btn-ghost")}</td>
+    </tr>`).join("");
   const story = multiShop && cheap && dear && hi > lo
     ? `<p class="story">Te <b>${esc(shopName(dear.shop))}</b> paguan <b class="num">${lek(hi - lo, it.currency)}</b> më shumë se te
         <b>${esc(shopName(cheap.shop))}</b> për të njëjtin produkt. Po ta blesh 4 herë në vit, kjo bën <b class="num">${lek((hi - lo) * 4, it.currency)}</b>.</p>` : "";
@@ -264,6 +271,7 @@ async function pageItem(id) {
       <div class="pic">${img(it.image, it.title)}</div>
       <div>
         <h1>${esc(it.title)}</h1>
+        ${it.size ? `<p class="size-line">Krahasojmë vetëm madhësinë <b>${esc(it.size)}</b>. Çdo dyqan më poshtë e shkruan këtë madhësi te produkti.</p>` : ""}
         <div class="summary">
           <div class="low">Më i liri<b>${lek(lo, it.currency)}</b></div>
           ${multiShop && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
@@ -273,21 +281,23 @@ async function pageItem(id) {
         ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
         <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
-        ${multiShop && it.size_note ? `<p class="size-warn">${it.size_note === 2
-          ? "Asnjë nga këto dyqane nuk e tregon madhësinë në emrin e produktit. I krahasuam sepse emri është i njëjtë dhe çmimet janë afër njëri-tjetrit. Kontrollo madhësinë te dyqani."
-          : "Disa dyqane nuk e tregojnë madhësinë. I përfshimë vetëm kur çmimi përputhet me madhësinë që tregojnë dyqanet e tjera. Kontrollo madhësinë te dyqani."}</p>` : ""}
+        ${multiShop && it.size_note === 2 ? `<p class="size-warn">Asnjë nga këto dyqane nuk e shkruan madhësinë te produkti.
+          I krahasuam sepse emri është i njëjtë dhe çmimet janë brenda 25% të njëri-tjetrit. Kontrollo madhësinë te dyqani para se të blesh.</p>` : ""}
+        ${unconfirmed ? `<h2 class="sub">edhe këto dyqane e kanë, pa e shkruar madhësinë</h2>
+          <p class="note">Nuk i krahasojmë dhe nuk i numërojmë te më i liri, sepse nuk e dimë nëse është ${it.size ? esc(it.size) : "e njëjta madhësi"}. Kontrollo madhësinë te dyqani.</p>
+          <table class="offers unconfirmed"><tbody>${unconfirmed}</tbody></table>` : ""}
         <p class="note">${multiShop
           ? "Krahasojmë vetëm të njëjtin produkt: i njëjti emër, e njëjta markë dhe e njëjta madhësi. Emri i saktë te çdo dyqan është poshtë çmimit, që ta kontrollosh vetë."
           : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}</p>
       </div>
     </div>
-    ${it.dupes && it.dupes.length ? `<section class="section"><h2>dupe më të lira</h2>
-      <p class="lead">Jo i njëjti produkt. ${esc(DUPE_WHY[it.dupes[0].kind] || "")} Kontrollo përbërësit dhe madhësinë te dyqani.</p>
+    ${it.dupes && it.dupes.length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2>
+      <p class="lead">Këto nuk janë i njëjti produkt dhe nuk hyjnë te krahasimi i çmimeve më sipër. ${esc(DUPE_WHY[it.dupes[0].kind] || "")} Kontrollo përbërësit dhe madhësinë te dyqani.</p>
       <div class="dps">${it.dupes.map((r) => dupePair(r, { showOrig: false })).join("")}</div></section>` : ""}
-    ${it.dupe_of && it.dupe_of.length ? `<section class="section"><h2>alternativë më e lirë e</h2>
+    ${it.dupe_of && it.dupe_of.length ? `<section class="section apart"><h2>alternativë më e lirë e</h2>
       <p class="lead">Ky produkt kushton më pak se origjinali. ${esc(DUPE_WHY[it.dupe_of[0].kind] || "")}</p>
       <div class="dps">${it.dupe_of.map((r) => dupePair(r)).join("")}</div></section>` : ""}
-    ${it.similar.length ? `<section class="section"><h2>produkte të ngjashme</h2><p class="lead">Nga dyqane të tjera, më të lirat së pari.</p>
+    ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Produkte të tjera, jo i njëjti. Nga dyqane të tjera, më të lirat së pari.</p>
       <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
   </div>`;
 }
@@ -370,19 +380,19 @@ async function pageShare(params) {
     const r = await fetch("/api/lookup", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, price: null, currency: "ALL", url }) }).then((x) => x.json()).catch(() => ({}));
     const exact = (r.exact || []).filter((o) => o.in_stock);
-    const offerRow = (o, withTitle) => `<tr><td><b>${esc(shopName(o.shop))}</b>${withTitle ? `<span class="t">${esc(o.title)}</span>` : ""}</td>
+    const offerRow = (o, withTitle) => `<tr><td><b>${esc(shopName(o.shop))}</b>${withTitle || o.size ? `<span class="t">${esc(withTitle ? o.title : o.size)}</span>` : ""}</td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
       <td>${shopLink(o, o.item, "ndaj", "btn btn-ghost")}</td></tr>`;
-    const block = (h, rows) => `<section class="section" style="border:0;padding-top:10px"><h2>${h}</h2>
+    const block = (h, rows, cls = "") => `<section class="section ${cls}" style="padding-top:10px"><h2>${h}</h2>
       <table class="offers"><tbody>${rows}</tbody></table></section>`;
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><h1>${esc(title || "produkti yt")}</h1>
-        <p>${exact.length ? `Ky produkt gjendet në ${plural(exact.length, "dyqan", "dyqane")} të tjera, më i liri së pari.`
-          : (r.similar || []).length ? "Nuk e gjetëm saktësisht këtë produkt, por këto janë të ngjashme dhe më të lira."
-          : "Nuk gjetëm këtë produkt në dyqanet që krahasojmë."}${r.query && r.query.size_label ? ` Madhësia: ${esc(r.query.size_label)}.` : ""}</p></div>
+        <p>${exact.length ? `I njëjti produkt${r.query.size_label ? `, ${esc(r.query.size_label)},` : ""} gjendet në ${plural(exact.length, "dyqan", "dyqane")} të tjera, më i liri së pari.`
+          : "Nuk e gjetëm këtë produkt, në këtë madhësi, në dyqanet që krahasojmë."}
+          ${exact.length && r.query.size_assumed ? " Faqja e dyqanit nuk e shkruan madhësinë: e krahasuam sipas çmimit, kontrolloje te dyqani." : ""}</p></div>
       ${exact.length ? block("i njëjti produkt", exact.slice(0, 12).map((o) => offerRow(o, false)).join("")) : ""}
-      ${!exact.length && (r.similar || []).length ? block("të ngjashme", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join("")) : ""}
-      ${(r.dupes || []).length ? `<section class="section"><h2>dupe më të lira</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
+      ${!exact.length && (r.similar || []).length ? block("të ngjashme: jo i njëjti produkt", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join(""), "apart") : ""}
+      ${(r.dupes || []).length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
       <section class="section"><h2>krahaso një tjetër</h2>${form}</section></div>`;
   }
   document.getElementById("share-form").onsubmit = (e) => {

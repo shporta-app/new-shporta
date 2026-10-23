@@ -12,8 +12,10 @@ Two rows are the same product only when all of these hold:
   2. the name is specific: it names a brand (from the shops' brand fields, or a word that opens product names in
      several shops) or a model code, and has at least three words. Generic names like "Këpucë me takë" or
      "Pantallona të shkurtra" in two shops are never treated as one product
-  3. the sizes don't contradict each other; a row with no size joins only when the name exists in exactly one size
-     AND its price is close to that size's price (a shop that writes "Cream" but sells the 15 ml stays out)
+  3. the sizes are equal. A title with two sizes uses the variant's ("Shampoo *250ml - 500ml" is 500 ml); a set
+     ("Toner 30ml + Serum 10ml") only matches the same set. A row with no size joins only when the name exists in
+     exactly one size AND its price is within 50% of it; build_seed.py then lists it apart, outside the comparison.
+     Rows with no size are compared with each other only when no shop states any size for that name
   4. its price is plausible for the group: under half or over double the group's typical price means a different
      size or pack, so that row is dropped
   5. the shop doesn't sell several different products under the same name (we couldn't tell which one is meant)
@@ -74,6 +76,27 @@ def fold(s):
     return "".join(ch for ch in s if not unicodedata.combining(ch))
 
 
+VARIANT_SEP_RE = re.compile(r"\s[-–]\s")  # "Product name - 500ml": what follows is the variant
+
+
+def size_of(m):
+    """A SIZE_RE match as (value, unit), litres and kilos in ml and g so "1 L" == "1000 ml"."""
+    v, u = float(m.group(1).replace(",", ".")), m.group(2)
+    u = "oz" if "oz" in u else UNIT.get(u, u)
+    if u in ("l", "kg"):
+        v, u = v * 1000, "ml" if u == "l" else "g"
+    return round(v, 2), u
+
+
+def size_label(val, unit):
+    """How a size reads on the site: "250 ml", "60 copë", or a set's "10ml+50ml"."""
+    if val is None:
+        return None
+    if unit and "+" in unit:
+        return unit
+    return f"{val:g} {'copë' if unit == 'pcs' else unit}" if unit else f"{val:g}"
+
+
 def parse(title):
     t = LABELS_RE.sub(" ", fold(title))
     if any(w in t for w in PERFUME_WORDS) or "(" in t:
@@ -85,9 +108,19 @@ def parse(title):
     size = None
     sizes = list(SIZE_RE.finditer(t))
     if sizes:
-        u = sizes[0].group(2)
-        size = (float(sizes[0].group(1).replace(",", ".")), "oz" if "oz" in u else UNIT.get(u, u))
-        t = SIZE_RE.sub(" ", t)  # every mention: "Effaclar K+ 40 ml - 40 ml"
+        metric = [m for m in sizes if size_of(m)[1] != "oz"] or sizes  # "30ml (1 fl oz)" is one size
+        distinct = {size_of(m) for m in metric}
+        if len(distinct) == 1:
+            size = size_of(metric[0])  # every mention agrees: "Effaclar K+ 40 ml - 40 ml"
+        else:
+            seps = [m.end() for m in VARIANT_SEP_RE.finditer(t)]
+            last = metric[-1]
+            if seps and last.start() >= seps[-1] and not re.search(r"\+|,|\bdhe\b|\band\b", t[seps[-1]:]):
+                size = size_of(last)  # the variant's own size wins over the name's: "Shampo *250ml - 500ml" is 500 ml
+            else:
+                # a set ("Toner 30ml + Serum 10ml + Cream 20g"): only the same set matches it
+                size = (0.0, "+".join(f"{v:g}{u}" for v, u in sorted(distinct, key=lambda x: (x[1] or "", x[0]))))
+        t = SIZE_RE.sub(" ", t)
     counts = list(COUNT_RE.finditer(t))
     if counts:
         if not size:
@@ -180,10 +213,10 @@ def main():
                 target = next(x for x in sizes if same_size(s, x))
             elif len(sizes) == 1 and size_shops[sizes[0]] >= 2:
                 # rule 3: a row without a size joins only when every shop that states a size states the same one
-                # (2+ shops), so the product comes in one size. Its price must still be plausible (rule 4's range);
-                # prices of the same product really do vary a lot between shops (1 350 L to 3 325 L, same 75 ml).
+                # (2+ shops), so the product comes in one size, and its price is within 50% of that size's price.
+                # It's listed apart on the site ("doesn't state the size") and never counts as the cheapest.
                 ref = size_price[sizes[0]]
-                if not (ref / 2 <= price_of[pid][0] <= ref * 2):
+                if not (ref / 1.5 <= price_of[pid][0] <= ref * 1.5):
                     stats["no size, price off"] += 1
                     continue
                 target = sizes[0]
@@ -196,13 +229,14 @@ def main():
                 continue
             gid = hashlib.md5(f"{key}|{target}".encode()).hexdigest()[:12]
             rows.append((pid, gid))
-        # rows that state no size can still be compared with each other when their prices agree closely
-        if len({shop for _, shop in unsized}) >= 2:
+        # Rows with no size are compared with each other only when no shop states any size for this name
+        # (if it's sold as 50 ml and 100 ml somewhere, two unsized rows could be either). Never perfumes:
+        # a perfume always comes in several sizes.
+        if sizes and unsized:
+            stats["no size, product has sizes"] += len(unsized)
+        elif len({shop for _, shop in unsized}) >= 2 and not set(key.split()) & (PERFUME_WORDS | {"edp", "edt"}):
             ps = [price_of[pid][0] for pid, _ in unsized]
-            # a long, specific name ("Pharmaceris Emotopic Emollient Barrier Cream") tolerates the price spread
-            # shops really have; a short one must agree closely
-            spread = 1.4 if len(key.split()) >= 4 else 1.25
-            if max(ps) <= min(ps) * spread:
+            if max(ps) <= min(ps) * 1.25:
                 gid = hashlib.md5(f"{key}|unknown".encode()).hexdigest()[:12]
                 rows.extend((pid, gid) for pid, _ in unsized)
             else:
