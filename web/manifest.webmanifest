@@ -1,0 +1,20 @@
+{
+  "name": "shporta: krahaso çmimet",
+  "short_name": "shporta",
+  "description": "I njëjti produkt, çmime të ndryshme. Krahaso çmimet e kozmetikës, parfumeve, veshjeve dhe aksesorëve në Shqipëri.",
+  "lang": "sq",
+  "start_url": "/?nga=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#14121F",
+  "theme_color": "#7B4DFF",
+  "icons": [
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "share_target": {
+    "action": "/ndaj",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

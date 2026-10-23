@@ -32,6 +32,8 @@ import dupes
 from match import GENERIC, parse, same_size
 
 HERE = Path(__file__).parent
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("text/javascript", ".js")
 WEB = HERE / "web"
 PORT = int(os.environ.get("PORT", 8787))
 DB_FILE = HERE / "seed" / "phia-api.db"
@@ -398,6 +400,11 @@ for _g in SYNONYMS:
 TYPE_WORDS = {w for g in SYNONYMS[:24] for w in g} | {"blazer", "kostum", "hoodie", "top", "cardigan", "kardigan"}
 
 
+# a colour ("Jeans … - E zezë") shouldn't decide what counts as a similar product
+COLOURS = set("""zeze zi bardhe kuqe blu gri roze jeshile kafe bezhe portokalli verdhe vjollce bojeqielli
+black white red blue grey gray pink green brown beige orange yellow purple navy ecru khaki""".split())
+
+
 def known_word(w):
     try:
         return db().execute("SELECT 1 FROM words WHERE words MATCH ? LIMIT 1", (f'"{w}"',)).fetchone() is not None
@@ -408,7 +415,7 @@ def known_word(w):
 def similar(key, price, currency, limit=8):
     """Products covering most of the title's words (in either language), cheaper ones first.
     Words no other shop uses (a brand's line names like Zara's "TRF", "Z1975") are ignored."""
-    q = [w for w in set(key.split()) if re.fullmatch(r"[a-z0-9]+", w)]
+    q = [w for w in set(key.split()) if re.fullmatch(r"[a-z0-9]+", w) and w not in COLOURS]
     q = [w for w in q if any(known_word(a) for a in (ALTS.get(w) or {w}))]
     types = [w for w in q if w in TYPE_WORDS]
     if len(q) < 2 and not types:  # one word is enough only when it names the kind of product ("blazer")
@@ -437,8 +444,8 @@ def similar(key, price, currency, limit=8):
         res.append(o)
         if len(res) >= 20:
             break
-    if price:
-        res.sort(key=lambda o: (o["price"] >= price, o["price"]))
+    # cheaper than the page first; with no price (a shared link) simply cheapest first
+    res.sort(key=lambda o: (o["price"] >= price, o["price"]) if price else (False, o["price"]))
     return res[:limit]
 
 

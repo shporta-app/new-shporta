@@ -343,6 +343,56 @@ async function pageDupes(params) {
   </div>`;
 }
 
+// "Share to shporta": the phone's Share menu opens /ndaj?title=…&text=…&url=… (installed web app on Android).
+// Also a paste box, for iPhone and anyone without the app.
+function cleanTitle(t) {
+  // "JEANS TRF WIDE LEG - E zezë | ZARA Shqipëri" -> "JEANS TRF WIDE LEG - E zezë"
+  return String(t || "").replace(/https?:\/\/\S+/g, " ").split(/\s[|•]\s/)[0].replace(/\s+/g, " ").trim();
+}
+async function pageShare(params) {
+  const q = new URLSearchParams(params);
+  const text = q.get("text") || "";
+  const url = q.get("url") || (text.match(/https?:\/\/\S+/) || [""])[0];
+  const title = cleanTitle(q.get("title") || text);
+  document.title = "Krahaso një produkt | shporta";
+  const form = `<form class="hero-search" id="share-form">
+      <label class="sr" for="share-in">Linku ose emri i produktit</label>
+      <input id="share-in" name="v" placeholder="Ngjit linkun e produktit ose shkruaj emrin">
+      <button class="btn" type="submit">Krahaso</button></form>`;
+  if (!url && !title) {
+    main.innerHTML = `<div class="wrap"><div class="page-head"><h1>krahaso një produkt</h1>
+      <p>Ngjit linkun e një produkti nga çdo dyqan online, ose shkruaj emrin e tij.</p></div>${form}
+      <section class="section" style="border:0"><h2>më shpejt nga telefoni</h2>
+      <p class="lead">Në Android: hap shporta.app në Chrome, zgjidh "Shto në ekranin kryesor". Pastaj, kur shikon një produkt në çdo dyqan,
+      prek <b>Ndaj</b> dhe zgjidh <b>shporta</b>. Në iPhone: kopjo linkun e produktit dhe ngjite këtu.</p></section></div>`;
+  } else {
+    main.innerHTML = `<div class="wrap loading">Duke kërkuar ${esc(title || url)}…</div>`;
+    const r = await fetch("/api/lookup", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, price: null, currency: "ALL", url }) }).then((x) => x.json()).catch(() => ({}));
+    const exact = (r.exact || []).filter((o) => o.in_stock);
+    const offerRow = (o, withTitle) => `<tr><td><b>${esc(shopName(o.shop))}</b>${withTitle ? `<span class="t">${esc(o.title)}</span>` : ""}</td>
+      <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
+      <td>${shopLink(o, o.item, "ndaj", "btn btn-ghost")}</td></tr>`;
+    const block = (h, rows) => `<section class="section" style="border:0;padding-top:10px"><h2>${h}</h2>
+      <table class="offers"><tbody>${rows}</tbody></table></section>`;
+    main.innerHTML = `<div class="wrap">
+      <div class="page-head"><h1>${esc(title || "produkti yt")}</h1>
+        <p>${exact.length ? `Ky produkt gjendet në ${plural(exact.length, "dyqan", "dyqane")} të tjera, më i liri së pari.`
+          : (r.similar || []).length ? "Nuk e gjetëm saktësisht këtë produkt, por këto janë të ngjashme dhe më të lira."
+          : "Nuk gjetëm këtë produkt në dyqanet që krahasojmë."}${r.query && r.query.size_label ? ` Madhësia: ${esc(r.query.size_label)}.` : ""}</p></div>
+      ${exact.length ? block("i njëjti produkt", exact.slice(0, 12).map((o) => offerRow(o, false)).join("")) : ""}
+      ${!exact.length && (r.similar || []).length ? block("të ngjashme", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join("")) : ""}
+      ${(r.dupes || []).length ? `<section class="section"><h2>dupe më të lira</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
+      <section class="section"><h2>krahaso një tjetër</h2>${form}</section></div>`;
+  }
+  document.getElementById("share-form").onsubmit = (e) => {
+    e.preventDefault();
+    const v = new FormData(e.currentTarget).get("v").trim();
+    if (!v) return;
+    go(/^https?:\/\//i.test(v) ? `/ndaj?url=${encodeURIComponent(v)}` : `/kerko?q=${encodeURIComponent(v)}`);
+  };
+}
+
 function pageExtension() {
   document.title = "Shtesa për shfletuesin | shporta";
   main.innerHTML = `<div class="wrap">
@@ -447,6 +497,7 @@ async function route() {
     else if (pathname === "/shtesa") pageExtension();
     else if (pathname === "/privatesia") pagePrivacy();
     else if (pathname === "/dupe") await pageDupes(params);
+    else if (pathname === "/ndaj") await pageShare(params);
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {
     main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>
@@ -476,3 +527,4 @@ document.addEventListener("submit", (e) => {
 window.addEventListener("popstate", route);
 route();
 consentBanner();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
