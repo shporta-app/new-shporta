@@ -29,7 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import dupes
-from match import GENERIC, MEN_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
+from match import GENERIC, MEN_WORDS, PERFUME_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
 
 HERE = Path(__file__).parent
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -66,7 +66,7 @@ def meta(key):
 
 CATEGORIES = dict(ast.literal_eval(meta("categories") or "[]"))
 COLS = ("id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id,"
-        " in_compare")
+        " in_compare, cat")
 
 
 def page_key(url):
@@ -494,10 +494,32 @@ def known_word(w):
         return False
 
 
+BEAUTY_CATS = {"parfume", "lekure", "grim", "floke", "trup"}
+_brand_words = None
+
+
+def brand_words():
+    """Words of the shops' brand fields that 2+ shops use ("dolce", "gabbana", "medicube"), not product words."""
+    global _brand_words
+    if _brand_words is None:
+        shops = collections.defaultdict(set)
+        for brand, shop in db().execute("SELECT DISTINCT brand, shop FROM products WHERE brand IS NOT NULL AND brand != ''"):
+            for w in re.findall(r"[a-z0-9]+", fold(brand)):
+                shops[w].add(shop)
+        _brand_words = {w for w, s in shops.items() if len(s) >= 2 and len(w) >= 3 and not w.isdigit()
+                        and w not in GENERIC and w not in TYPE_WORDS and w not in PERFUME_WORDS and w not in COLOURS}
+    return _brand_words
+
+
 def similar(key, price, currency, limit=8):
     """Products covering most of the title's words (in either language), cheaper ones first.
-    Words no other shop uses (a brand's line names like Zara's "TRF", "Z1975") are ignored."""
-    q = [w for w in set(key.split()) if re.fullmatch(r"[a-z0-9]+", w) and w not in COLOURS]
+    Words no other shop uses (a brand's line names like Zara's "TRF", "Z1975") are ignored.
+    Beauty and perfume suggestions keep the brand (another brand's "Light and Refreshing EDT" isn't similar
+    to Light Blue); clothing may be any brand. A colour word counts only in a perfume's name ("Light Blue")."""
+    words = set(key.split())
+    perfume = bool(words & (PERFUME_WORDS | {"edp", "edt"}))
+    q = [w for w in words if re.fullmatch(r"[a-z0-9]+", w) and (perfume or w not in COLOURS)]
+    brand = words & brand_words()
     q = [w for w in q if any(known_word(a) for a in (ALTS.get(w) or {w}))]
     types = [w for w in q if w in TYPE_WORDS]
     cuts = {CUT_OF[w] for w in set(key.split()) if w in CUT_OF}
@@ -515,7 +537,8 @@ def similar(key, price, currency, limit=8):
         hits = sum(1 for g in groups if kw & set(g))
         same_type = not types or any(kw & (ALTS.get(t) or {t}) for t in types)
         same_cut = not cuts or (all(kw & c for c in cuts) and not any(kw & c for c in set(CUT_OF.values()) - cuts))
-        if hits >= need and same_type and same_cut:
+        same_brand = not brand or o["cat"] not in BEAUTY_CATS or bool(kw & brand)
+        if hits >= need and same_type and same_cut and same_brand:
             scored.append((hits / len(q), -len(kw), o))
     scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
     seen, per_shop, res = set(), collections.Counter(), []
