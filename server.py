@@ -29,7 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import dupes
-from match import GENERIC, SECOND_HAND, parse, same_size, size_by_price, size_label
+from match import GENERIC, MEN_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
 
 HERE = Path(__file__).parent
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -316,6 +316,18 @@ def shops():
 
 # ------------------------------------------------------------------ extension endpoint
 
+def has_gendered_line(words):
+    """True when these name words also exist with "pour homme" / "for women"… added: a separate perfume line."""
+    extra = MEN_WORDS | WOMEN_WORDS
+    q = " AND ".join(f'"{w}"' for w in words) + " AND (" + " OR ".join(f'"{w}"' for w in sorted(extra)) + ")"
+    try:
+        rows = db().execute("SELECT name_key FROM products WHERE id IN (SELECT rowid FROM words WHERE words MATCH ? LIMIT 200)",
+                            (q,)).fetchall()
+    except sqlite3.OperationalError:
+        return False
+    return any(set(r[0].split()) - extra - {"pour", "for"} == set(words) for r in rows)
+
+
 def lookup(title, price=None, currency="ALL", url=""):
     """What the extension shows for the product page a shopper has open, in three separate parts:
        exact    the same product in the same size at other shops (the only thing the price verdict uses)
@@ -374,7 +386,14 @@ def lookup(title, price=None, currency="ALL", url=""):
     if not (len(words) >= 3 and any(w not in GENERIC for w in words)):
         return answer([])
     cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))]
-    sized = [o for o in cands if o["size_val"] is not None]
+    # who it's for, as match.py: a "(Men)" title never matches a "(Women)" one, and where the name also exists
+    # as a separate men's/women's line ("Light Blue" / "Light Blue Pour Homme") the label must be the same
+    mine_g = gender_of(title or "")
+    if has_gendered_line(words):
+        cands = [o for o in cands if gender_of(o["title"]) == mine_g]
+    elif mine_g:
+        cands = [o for o in cands if gender_of(o["title"]) in (None, mine_g)]
+    sized =[o for o in cands if o["size_val"] is not None]
     if size is not None:
         return answer([o for o in sized if same_size(size, (o["size_val"], o["size_unit"]))])
     # the page doesn't state a size: compare only when the size is certain from the other shops

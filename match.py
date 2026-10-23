@@ -76,6 +76,16 @@ SECOND_HAND = {"thrift.al"}
 # a title that says who it's for; "(Men)" and "(Women)" on the same name are two different perfumes
 MEN_RE = re.compile(r"\b(men|man|homme|uomo|meshkuj|him|male|masculin)\b")
 WOMEN_RE = re.compile(r"\b(women|woman|femme|donna|femra|her|female|feminin)\b")
+# the words that name a separate men's / women's line of a product ("Light Blue Pour Homme")
+MEN_WORDS = {"men", "man", "homme", "uomo", "him", "male", "masculin", "meshkuj"}
+WOMEN_WORDS = {"women", "woman", "femme", "donna", "her", "female", "feminin", "femra"}
+
+
+def gender_of(title):
+    """"men" / "women" when the title says who it's for (and not both), else None."""
+    t = fold(title)
+    men, women = bool(MEN_RE.search(t)), bool(WOMEN_RE.search(t))
+    return None if men == women else "men" if men else "women"
 
 
 def fold(s):
@@ -296,12 +306,10 @@ def main():
     # A name that also exists as a separate men's or women's line ("Light Blue" next to "Light Blue Pour
     # Homme"): there the label is part of what the product is, so "(Men)" titles match only other "(Men)" titles.
     key_of = {pid: key for key, offs in by_name.items() for pid, _, _ in offs}
-    men_words = {"men", "man", "homme", "uomo", "him", "male", "masculin", "meshkuj"}
-    women_words = {"women", "woman", "femme", "donna", "her", "female", "feminin", "femra"}
     has_men_line, has_women_line = set(), set()
     for key in by_name:
         words = set(key.split())
-        for gender, line in ((men_words, has_men_line), (women_words, has_women_line)):
+        for gender, line in ((MEN_WORDS, has_men_line), (WOMEN_WORDS, has_women_line)):
             if words & gender:
                 line.add(" ".join(sorted(words - gender - {"pour", "for"})))
     relabel, gendered = {}, has_men_line | has_women_line
@@ -309,9 +317,9 @@ def main():
         for p in pids:
             k = key_of.get(p)
             if k in gendered:
-                men, women = bool(MEN_RE.search(titles[p])), bool(WOMEN_RE.search(titles[p]))
-                if men != women:
-                    relabel[p] = hashlib.md5(f"{gid}|{'men' if men else 'women'}".encode()).hexdigest()[:12]
+                gender = gender_of(titles[p])
+                if gender:
+                    relabel[p] = hashlib.md5(f"{gid}|{gender}".encode()).hexdigest()[:12]
                     stats["gender label on a name with a gendered sibling line"] += 1
     rows = [(p, relabel.get(p, g)) for p, g in rows if p not in drop]
 
