@@ -483,7 +483,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", cache)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":  # HEAD gets the same headers without the body (link checkers use it)
+            self.wfile.write(body)
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_OPTIONS(self):
         self._send(204, b"")
