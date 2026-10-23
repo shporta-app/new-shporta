@@ -298,7 +298,9 @@ async function pageItem(id) {
     ${it.dupe_of && it.dupe_of.length ? `<section class="section apart"><h2>alternativë më e lirë e</h2>
       <p class="lead">Ky produkt kushton më pak se origjinali. ${esc(DUPE_WHY[it.dupe_of[0].kind] || "")}</p>
       <div class="dps">${it.dupe_of.map((r) => dupePair(r)).join("")}</div></section>` : ""}
-    ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Produkte të tjera, jo i njëjti. Nga dyqane të tjera, më të lirat së pari.</p>
+    ${(it.other_sizes || []).length ? `<section class="section"><h2>i njëjti produkt, madhësi tjetër</h2><p class="lead">I njëjti emër, por madhësi tjetër ose dyqani nuk e shkruan madhësinë. Nuk krahasohen me çmimet më sipër.</p>
+      <div class="grid">${it.other_sizes.map(tile).join("")}</div></section>` : ""}
+    ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Emër i ngjashëm: nuk e konfirmojmë që është i njëjti produkt. Nga dyqane të tjera, më të lirat së pari.</p>
       <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
   </div>`;
 }
@@ -380,19 +382,29 @@ async function pageShare(params) {
     main.innerHTML = `<div class="wrap loading">Duke kërkuar ${esc(title || url)}…</div>`;
     const r = await fetch("/api/lookup", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, price: null, currency: "ALL", url }) }).then((x) => x.json()).catch(() => ({}));
-    const exact = (r.exact || []).filter((o) => o.in_stock);
-    const offerRow = (o, withTitle) => `<tr><td><b>${esc(shopName(o.shop))}</b>${withTitle || o.size ? `<span class="t">${esc(withTitle ? o.title : o.size)}</span>` : ""}</td>
+    const exact = r.exact || [];  // out of stock too, marked: "not found" would be wrong when a shop lists it
+    const same = r.same_name || [];
+    const offerRow = (o, withTitle) => `<tr><td><b>${esc(shopName(o.shop))}</b>${withTitle || o.size ? `<span class="t">${esc(withTitle ? o.title : o.size)}</span>` : ""}${o.in_stock ? "" : `<span class="t">s'ka gjendje tani</span>`}</td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
       <td>${shopLink(o, o.item, "ndaj", "btn btn-ghost")}</td></tr>`;
+    // the same product name at shops whose size we can't confirm as the same: their own size is shown, never compared
+    const sameRow = (o) => `<tr><td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.size ? `madhësia: ${o.size}` : "dyqani nuk e shkruan madhësinë")}</span>${o.in_stock ? "" : `<span class="t">s'ka gjendje tani</span>`}</td>
+      <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
+      <td>${shopLink(o, o.item, "ndaj", "btn btn-ghost")}</td></tr>`;
+    const headline = exact.length
+      ? `I njëjti produkt${r.query.size_label ? `, ${esc(r.query.size_label)},` : ""} gjendet në ${plural(exact.length, "dyqan", "dyqane")} të tjera, më i liri së pari.`
+      : same.length ? `I njëjti produkt gjendet në ${plural(same.length, "dyqan", "dyqane")} të tjera, por nuk mund ta konfirmojmë që është e njëjta madhësi: shiko madhësinë te secili.`
+      : "Nuk e gjetëm këtë produkt në dyqanet e tjera që krahasojmë.";
     const block = (h, rows, cls = "") => `<section class="section ${cls}" style="padding-top:10px"><h2>${h}</h2>
       <table class="offers"><tbody>${rows}</tbody></table></section>`;
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><h1>${esc(title || "produkti yt")}</h1>
-        <p>${exact.length ? `I njëjti produkt${r.query.size_label ? `, ${esc(r.query.size_label)},` : ""} gjendet në ${plural(exact.length, "dyqan", "dyqane")} të tjera, më i liri së pari.`
-          : "Nuk e gjetëm këtë produkt, në këtë madhësi, në dyqanet që krahasojmë."}
+        <p>${headline}
           ${exact.length && r.query.size_assumed ? " Faqja e dyqanit nuk e shkruan madhësinë: e krahasuam sipas çmimit, kontrolloje te dyqani." : ""}</p></div>
       ${exact.length ? block("i njëjti produkt", exact.slice(0, 12).map((o) => offerRow(o, false)).join("")) : ""}
-      ${!exact.length && (r.similar || []).length ? block("të ngjashme: jo i njëjti produkt", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join(""), "apart") : ""}
+      ${same.length ? block(exact.length ? "edhe këto dyqane e kanë, në madhësi tjetër ose pa e shkruar madhësinë" : "i njëjti produkt, madhësia nuk konfirmohet",
+          same.slice(0, 12).map(sameRow).join(""), "unconfirmed") : ""}
+      ${!exact.length && !same.length && (r.similar || []).length ? block("të ngjashme: nuk e konfirmojmë që është i njëjti produkt", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join(""), "apart") : ""}
       ${(r.dupes || []).length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
       <section class="section"><h2>krahaso një tjetër</h2>${form}</section></div>`;
   }

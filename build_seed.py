@@ -60,12 +60,16 @@ def main():
     """)
     shop_cat = dict(src.execute("SELECT domain, category FROM shops"))
     group_of = dict(src.execute("SELECT product_id, group_id FROM matches"))
+    alias = dict(src.execute("SELECT key, canonical FROM key_alias"))
+    dst.execute("CREATE TABLE key_alias (key TEXT PRIMARY KEY, canonical TEXT)")
+    dst.executemany("INSERT INTO key_alias VALUES (?,?)", alias.items())
 
     rows = []
     for pid, shop, title, brand, url, image, price, reg, cur, stock, craw in src.execute(
             """SELECT id, shop, title, brand, url, image, price, regular_price, currency, in_stock, category_raw
                FROM products WHERE price > 0"""):
         key, size = parse(title)
+        key = alias.get(key, key)  # match.py rule 5: "Mancera Red Tobacco" -> "Mancera Red Tobacco EDP"
         cat = classify(title, craw, shop_cat.get(shop), shop)
         gid = group_of.get(pid)
         # one listing item per matched product, otherwise per product page (Shopify ?variant= rows share a page)

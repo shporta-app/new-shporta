@@ -111,10 +111,12 @@
   // then, apart and labelled, other products: similar ones (only when there's no exact match) and dupes.
   function render(product, data) {
     document.getElementById("shporta-host")?.remove();
-    const exact = (data.exact || []).filter((o) => o.in_stock);
-    const similar = exact.length ? [] : data.similar || [];
+    const live = (data.exact || []).filter((o) => o.in_stock);
+    const exact = live.length ? live : data.exact || [];  // listed but out of stock is still "found", marked
+    const same = data.same_name || [];  // the same name where we can't confirm the size: each shop's size shown
+    const similar = exact.length || same.length ? [] : data.similar || [];
     const dupes = data.dupes || [];
-    if (!exact.length && !similar.length && !dupes.length)
+    if (!exact.length && !same.length && !similar.length && !dupes.length)
       return note("Ky produkt nuk gjendet në dyqanet e tjera që krahasojmë.", 7000);
     const q = data.query || {};
     const el = document.createElement("div");
@@ -136,17 +138,28 @@
           node("div", { class: "s", text: v.save ? `${fmt(v.save, product.currency)} më lirë te dyqani më i lirë`
             : `Mesatarja në ${v.shops} dyqane: ${fmt(v.median, product.currency)}` }));
       }
-      exact.slice(0, 5).forEach((o) => panel.append(link(go(o), fmt(o.price, o.currency), host(o.shop) + (o.size ? ` · ${o.size}` : ""))));
-      if (data.unconfirmed && data.item)
+      exact.slice(0, 5).forEach((o) => panel.append(link(go(o), fmt(o.price, o.currency),
+        host(o.shop) + (o.size ? ` · ${o.size}` : "") + (o.in_stock ? "" : " · s'ka gjendje tani"))));
+      if (data.unconfirmed && data.item && !same.length)
         panel.append(node("a", { class: "more", href: `${SITE}/produkt/${encodeURIComponent(data.item)}`, target: "_blank", rel: "noopener",
           text: `+${data.unconfirmed} dyqane e kanë pa shkruar madhësinë: shiko te shporta.app` }));
+    } else if (same.length) {
+      panel.append(node("h3", { text: "I njëjti produkt, madhësia nuk konfirmohet" }),
+        node("div", { class: "s", text: "Dyqanet e tjera nuk e shkruajnë madhësinë ose kanë madhësi tjetër: kontrolloje te secili." }));
     } else {
       panel.append(node("div", { class: "s", text: q.size_label
         ? `Nuk e gjetëm këtë produkt, në madhësinë ${q.size_label}, në dyqane të tjera.`
         : "Nuk e gjetëm këtë produkt në dyqane të tjera." }));
     }
+    if (same.length) {
+      const box = node("div", { class: exact.length ? "alt" : "" },
+        exact.length ? node("h4", { text: "Edhe këto e kanë, në madhësi tjetër ose pa e shkruar" }) : null);
+      same.slice(0, 4).forEach((o) => box.append(link(go(o), fmt(o.price, o.currency),
+        `${host(o.shop)} · ${o.size ? `madhësia ${o.size}` : "pa madhësi"}${o.in_stock ? "" : " · s'ka gjendje"}`)));
+      panel.append(box);
+    }
     if (similar.length) {
-      const box = node("div", { class: "alt" }, node("h4", { text: "Të ngjashme: jo i njëjti produkt" }));
+      const box = node("div", { class: "alt" }, node("h4", { text: "Të ngjashme: nuk e konfirmojmë që është i njëjti produkt" }));
       similar.slice(0, 4).forEach((o) => box.append(link(go(o), fmt(o.price, o.currency), `${host(o.shop)} · ${o.title}`)));
       panel.append(box);
     }

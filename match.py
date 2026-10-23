@@ -57,16 +57,45 @@ COUNT_RE = re.compile(r"(\d{1,4})\s*(tablets?|tableta|tabs?|caps(ules?)?|kapsula
                       r"ampula|ampoules?|cope|pcs|pieces|wipes|letra)\b")
 BARE_SIZE_RE = re.compile(r"\s[-–]\s*(\d{1,4})\s*$")  # "Cream - 50" (variant title without a unit)
 # shop labels around the size ("vëllimi: 236 ml", "Masa: 100 ML", "50 ml x 1")
-LABELS_RE = re.compile(r"\b(vellimi|volumi|masa|madhesia|sasia|size|volume|format|permbajtja|ngjyra|color|colour)\b\s*:?|\bx\s*1\b|\b1\s*x\b")
+LABELS_RE = re.compile(r"\b(vellimi|volumi|masa|madhesia|sasia|size|volume|format|permbajtja|ngjyra|color|colour)\b\s*:?|\bx\s*1\b|\b1\s*x\b"
+                       r"|\b(marka|brand|sex|gjinia|pesha|lloji)\s*:")  # "Marka: DSQUARED², Sex: Unisex"
 # the same word in Albanian and English, or spelled two ways
 SAME = {"krem": "cream", "creme": "cream", "kremi": "cream", "shampo": "shampoo", "shampon": "shampoo", "xhel": "gel",
         "locion": "lotion", "maske": "mask", "masque": "mask", "ampula": "ampoule", "shkume": "foam", "mousse": "foam",
         "serumi": "serum", "tonik": "toner", "moisturiser": "moisturizer", "moisturising": "moisturizing",
-        "hidratues": "moisturizing", "pastrues": "cleanser", "balsam": "conditioner", "vaj": "oil"}
+        "hidratues": "moisturizing", "pastrues": "cleanser", "balsam": "conditioner", "vaj": "oil", "baume": "balm"}
 CLOTHING_SIZES = {"s", "m", "l", "xs", "xl", "xxl", "xxxl", "2xl", "3xl"}
 # words shops add or leave out for the same product: "CeraVe Hydrating (Facial) Cleanser", "(Women)" on a perfume
-NOISE = {"facial", "natural", "original", "new", "korean", "official", "authentic", "genuine"}
+NOISE = {"facial", "natural", "original", "new", "korean", "official", "authentic", "genuine",
+         "zgjidhni", "nje", "opsion"}  # "Zgjidhni një opsion: 90" (choose an option)
+CONCENTRATIONS = {"edp", "edt", "parfum", "extrait", "edc", "cologne"}
+# words shops add to describe what a product is for, in either language ("Serum për flokë", "Hair Mask")
+DESCRIPTIONS = set("""hair floke flokeve floku flokesh flokut kujdes thate thata forcim skin lekure lekuren
+treatment trajtim per""".split())
+# product types: a name without one ("8H Magic Night") may join the same name with it ("8H Magic Night Serum")
+TYPE_WORDS_BEAUTY = set("""cream serum toner lotion gel mask shampoo conditioner soap spray oil balm cleanser foam
+fluid essence ampoule emulsion mist scrub""".split())
+# words that make another product (another edition, strength, pack, shade or person), never a line name
+VARIANT_WORDS = set("""refill rimbushes rimbushese tester set kit mini travel sample intense intensive intensement
+elixir extreme absolu absolue noir nuit night day jour plus forte max ultra rich riche light legere lite fresh
+sport summer winter limited edition gift duo trio pack bundle box men women homme femme uomo donna kids baby junior
+child children teen pour for him her tinted mat matte glow gloss shine oud
+hand hands duar dore foot feet kembe kembet lip lips buze buzet eye eyes sy syve nail nails thonj thonjve body trup trupi
+face fytyre fytyren fytyres scalp beard mjekerr intim intimate sun dielli after pas pre post
+waterproof waterprooof refillable double""".split())
+# makeup: the words after the name are shades ("Orgasm" / "Orgasm Rush"), so only exact names match there
+MAKEUP_WORDS = set("""blush lipstick foundation concealer mascara eyeshadow shadow gloss liner eyeliner pencil
+powder bronzer highlighter palette brow lip tint cushion primer rimel rimelit buzekuq pudra fondatine""".split())
+
+
+def line_word(w):
+    """A word that can name a product line ("Nutritive", "Genesis"): letters only, not a type, description,
+    colour, variant or perfume word."""
+    return (w.isalpha() and len(w) >= 4 and w not in GENERIC and w not in VARIANT_WORDS and w not in DESCRIPTIONS
+            and w not in TYPE_WORDS_BEAUTY and w not in PERFUME_WORDS and w not in CONCENTRATIONS)
 PERFUME_WORDS = {"eau", "parfum", "toilette", "edp", "edt", "extrait", "cologne", "perfume", "parfume"}
+# perfume and its spin-offs: a word more is another scent, so only exact names (and rule 5) match there
+SCENT_WORDS = PERFUME_WORDS | CONCENTRATIONS | {"vapo", "aftershave", "deodorant", "deo", "shower", "dush", "edc"}
 # gender labels shops add after a perfume's name ("(Women)", "për femra"); words inside names stay (Uomo, Homme, Men)
 GENDER_LABEL_RE = re.compile(r"\((women|woman|men|man|unisex|femra|meshkuj|for (wo)?men)\)|\bper (femra|meshkuj)\b|\(?unisex\)?")
 
@@ -161,6 +190,8 @@ def parse(title):
             continue
         words.add(w)
     words -= NOISE
+    if size and size[0]:
+        words.discard(f"{size[0]:g}")  # "Serum 90ml - 90": the variant's bare number is the size again
     return " ".join(sorted(words)), size
 
 
@@ -184,11 +215,21 @@ def main():
 
     price_of = {}
     by_name = collections.defaultdict(list)
-    for pid, shop, title, price, cur in con.execute("SELECT id, shop, title, price, currency FROM products WHERE price > 0"):
+    key_brands = collections.defaultdict(set)  # the words of the brand the shops give for each name
+    brand_names = collections.defaultdict(set)
+    for pid, shop, title, price, cur, brand in con.execute(
+            "SELECT id, shop, title, price, currency, brand FROM products WHERE price > 0"):
         key, size = parse(title)
         price_of[pid] = (price, cur)
         if len(key.split()) >= 2 and shop not in SECOND_HAND:  # one word ("Bluza") is too vague to match on
             by_name[key].append((pid, shop, size))
+            if brand:
+                brand_names[key].add(" ".join(re.findall(r"[a-z0-9]+", fold(brand))))
+    # a name's brand counts only when all its shops give the same one ("Pour Homme EDT" from Versace and Lacoste
+    # listings is two perfumes, so it gets no brand)
+    for key, names in brand_names.items():
+        if len(names) == 1:
+            key_brands[key] = set(next(iter(names)).split())
 
     # rule 2: brand words = tokens of the shops' brand fields, and words that open product names in 2+ shops
     brands = collections.Counter()
@@ -210,6 +251,125 @@ def main():
         return (code or len(words) >= 3) and (code or any(w in brand_words for w in words))
 
     stats = collections.Counter()
+
+    # rule 5: the same name with one word left out. "Mancera Red Tobacco" is "Mancera Red Tobacco EDP" when the
+    # perfume exists only as EDP in our shops; "Retisil Intensive Serum" is "Sesderma Retisil Intensive Serum" when
+    # that's the only brand that sells it. Only when exactly one fuller name exists (a perfume sold as both EDT and
+    # EDP stays apart), and sizes and prices are still checked below as for any other match.
+    extra_of = collections.defaultdict(set)
+    for key in by_name:
+        words = set(key.split())
+        # the left-out word is a concentration, or the brand the shops themselves give for the fuller name
+        for w in words & (CONCENTRATIONS | (key_brands[key] & brand_words)):
+            extra_of[" ".join(sorted(words - {w}))].add(key)
+    alias = {}
+    for key in list(by_name):
+        fuller = extra_of.get(key, set())
+        if len(fuller) != 1 or not specific(key):
+            continue
+        target = next(iter(fuller))
+        added = set(target.split()) - set(key.split())
+        if added <= CONCENTRATIONS and set(key.split()) & CONCENTRATIONS:
+            continue  # "X EDT" never becomes "X EDT EDP"
+        if not added <= CONCENTRATIONS and not added <= key_brands[key]:
+            continue  # a brand is filled in only when the listing's own shop gives that brand
+        alias[key] = target
+        stats["name completed (one word left out)"] += len(by_name[key])
+    # rule 6: the same product written with descriptions added or left out. "Kerastase 8H Magic Night Serum",
+    # "Kérastase Nutritive 8H Magic Night Serum 90ml – Kujdes për flokë të thatë" and "8H Magic Night Serum 90 ml"
+    # (brand in the shop's brand field) are one serum. A shorter name joins a fuller one when the extra words are
+    # only descriptions ("hair", "për flokë"), the brand its own shop gives, a product type the shorter name doesn't
+    # have, or one product-line word ("Nutritive") — and only when every fuller name adds the same line word, so
+    # "Light Blue" never joins "Light Blue Intense" or "Light Blue Pour Homme" (words that make another product
+    # never count, see VARIANT_WORDS). Sizes are still compared and prices checked as for every completed name.
+    by_rule5 = set(alias)  # a concentration or brand filled in: the tighter price check below
+    posting = collections.defaultdict(set)
+    for key in by_name:
+        for w in key.split():
+            posting[w].add(key)
+    parent = {}
+
+    def root(k):
+        while parent.get(k, k) != k:
+            k = parent[k]
+        return k
+
+    # brands as the shops' brand fields name them (not title openers: "Nutritive …" opens titles but is a line)
+    field_brands = {w for w, n in brands.items() if n >= 2 and len(w) >= 3 and w not in GENERIC}
+    shop_cat = dict(con.execute("SELECT domain, category FROM shops"))
+    beauty = {k for k, items in by_name.items() if all(shop_cat.get(s) in ("beauty", "perfume") for _, s, _ in items)}
+    for key in list(by_name):
+        words = set(key.split())
+        core = words - DESCRIPTIONS - TYPE_WORDS_BEAUTY - key_brands[key]
+        core -= MEN_WORDS | WOMEN_WORDS | {"pour", "for"}
+        if key not in beauty or words & (MAKEUP_WORDS | SCENT_WORDS) or not specific(key) or len(core) < 2:
+            continue  # beauty and pharmacy only: in clothing "Washed", "Pebble" are another colour or finish
+        rare = sorted(words, key=lambda w: len(posting[w]))[:2]
+        fuller = (posting[rare[0]] & posting[rare[-1]]) - {key}
+        if any(set(t.split()) & SCENT_WORDS for t in fuller if words < set(t.split())):
+            continue  # a perfume's name: a word more is another scent ("Pour Homme" / "Aqua Pour Homme")
+        typed = bool(words & TYPE_WORDS_BEAUTY)
+        ok, lines = [], set()
+        for t in (fuller & beauty) - {k for k in fuller if set(k.split()) & MAKEUP_WORDS}:
+            extra = set(t.split()) - words
+            if not extra or not words < set(t.split()):
+                continue
+            rest = extra - DESCRIPTIONS - key_brands[key] - (set() if typed else TYPE_WORDS_BEAUTY)
+            if len(rest) > 1 or any(not line_word(w) or w in field_brands for w in rest):
+                continue  # another product: "Intense", "Refill", a shade number, a second line word…
+            ok.append(t)
+            lines.add(frozenset(extra - DESCRIPTIONS - key_brands[key]))  # a type it adds counts as its line too
+        if len(lines - {frozenset()}) > 1:
+            # two different lines or types ("+ Serum", "+ Toner"): only names that add descriptions join
+            ok = [t for t in ok if not set(t.split()) - words - DESCRIPTIONS - key_brands[key]]
+        for t in ok:
+            a, b = root(key), root(t)
+            if a != b:
+                parent[a] = b
+    groups_of = collections.defaultdict(list)
+    for k in parent:
+        groups_of[root(k)].append(k)
+    for r, ks in groups_of.items():
+        members = set(ks) | {r}
+        canon = max(members, key=lambda k: (len({s for _, s, _ in by_name[k]}), len(k)))  # the most shops' name
+
+        def rest(k):  # what still differs from the chosen name once descriptions, brand and type are set aside
+            a, b = set(k.split()), set(canon.split())
+            d = (a ^ b) - DESCRIPTIONS - key_brands[k] - key_brands[canon]
+            if not a & TYPE_WORDS_BEAUTY or not b & TYPE_WORDS_BEAUTY:
+                d -= TYPE_WORDS_BEAUTY
+            return d
+        # names from two brands never become one product ("Kerastase" and "Kérastase Paris" are one brand)
+        # and every name must show that brand, in its title or its own shop's brand field ("Dry Body Oil" alone
+        # could be any brand's)
+        main = key_brands[canon] or next((key_brands[k] for k in members if key_brands[k]), set())
+        members = {k for k in members if main and (key_brands[k] or set(k.split())) & main}
+        if canon not in members:
+            continue
+        rests = {k: rest(k) for k in members - {canon}}
+        line = set().union(*rests.values()) if rests else set()
+        if len(line) > 1 or any(not line_word(w) for w in line):
+            members = {canon} | {k for k, d in rests.items() if not d}  # checked directly: descriptions only
+        for k in members - {canon}:
+            alias[k] = canon
+        stats["name completed (descriptions)"] += sum(len(by_name[k]) for k in members - {canon})
+
+    def final(k):
+        seen = set()
+        while k in alias and k not in seen:
+            seen.add(k)
+            k = alias[k]
+        return k
+    alias = {k: final(k) for k in alias if final(k) != k}
+    completed = {}  # rows that joined under a fuller name -> how far their price may be from the full name's
+    for key, target in alias.items():
+        if key in by_name:
+            completed.update({pid: 1.25 if key in by_rule5 else 1.5 for pid, _, _ in by_name[key]})
+            by_name[target].extend(by_name.pop(key))
+    con.execute("CREATE TABLE IF NOT EXISTS key_alias (key TEXT PRIMARY KEY, canonical TEXT)")
+    con.execute("DELETE FROM key_alias")
+    con.executemany("INSERT INTO key_alias VALUES (?, ?)", alias.items())
+
     rows = []
     for key, items in by_name.items():
         if len({shop for _, shop, _ in items}) < 2:
@@ -276,6 +436,19 @@ def main():
                 keep.add(p)
             else:
                 stats["price implausible"] += 1
+    rows = [(p, g) for p, g in rows if p in keep]
+    # a row whose name was completed must cost about the same as the rows that name it in full: within 25% for a
+    # filled-in concentration or brand ("Mancera Red Tobacco" -> "... EDP"), within 50% when only descriptions
+    # differed, so another concentration or edition at another price can't slip in
+    for (gid, cur), pids in by_group.items():
+        full = [price_of[p][0] for p in pids if p not in completed]
+        if not full:
+            continue  # every shop left the same word out: they match each other as before
+        med = statistics.median(full)
+        for p in pids:
+            if p in completed and not (med / completed[p] <= price_of[p][0] <= med * completed[p]):
+                keep.discard(p)
+                stats["completed name, price off"] += 1
     rows = [(p, g) for p, g in rows if p in keep]
 
     # A shop that sells several *different* products under one name+size (Rogers: many "ATLETE CALVIN KLEIN

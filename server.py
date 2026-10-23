@@ -279,7 +279,11 @@ def item(item_id):
     first = db().execute("SELECT name_key FROM products WHERE item_id = ? LIMIT 1", (item_id,)).fetchone()
     cur = it["currency"]
     sim = similar(first[0] if first else "", it["min_price"], cur, limit=12)
-    seen, out = {item_id}, []
+    # the same product name in other sizes (or other single listings): their own list, never "similar"
+    same = [r[0] for r in db().execute("SELECT DISTINCT item_id FROM products WHERE name_key = ? AND item_id != ? LIMIT 12",
+                                       (first[0], item_id))] if first and len(first[0].split()) >= 2 else []
+    it["other_sizes"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(same))})", same) if same else []
+    seen, out = {item_id} | set(same), []
     for o in sim:
         if o["item_id"] not in seen:
             seen.add(o["item_id"])
@@ -328,6 +332,15 @@ def has_gendered_line(words):
     return any(set(r[0].split()) - extra - {"pour", "for"} == set(words) for r in rows)
 
 
+def canonical_key(key):
+    """match.py rule 5: a name with one word left out ("Mancera Red Tobacco") under its full name."""
+    try:
+        r = db().execute("SELECT canonical FROM key_alias WHERE key = ?", (key,)).fetchone()
+    except sqlite3.OperationalError:  # a seed built before key_alias existed
+        return key
+    return r[0] if r else key
+
+
 def lookup(title, price=None, currency="ALL", url=""):
     """What the extension shows for the product page a shopper has open, in three separate parts:
        exact    the same product in the same size at other shops (the only thing the price verdict uses)
@@ -335,6 +348,7 @@ def lookup(title, price=None, currency="ALL", url=""):
        dupes    a different product that does the same job for less
     query.size_label is the size compared; query.size_assumed is true when the page itself doesn't state it."""
     key, size = parse(title or "")
+    key = canonical_key(key)
     page_host = urlparse(url).netloc.lower().removeprefix("www.") if url else ""
     q = {"title": title, "price": price, "currency": currency, "size_label": size_label(*size) if size and size[1] else None,
          "size_assumed": False}
@@ -350,8 +364,16 @@ def lookup(title, price=None, currency="ALL", url=""):
                "item": item_id}
         if item_id:  # shops selling it without stating the size: only counted, the product page lists them
             out["unconfirmed"] = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()[0] or 0
+        # the same product name at shops not in the comparison: they don't state the size, or sell another size.
+        # Listed with each shop's own size, never compared on price, and never shown as "similar".
+        taken = {o["shop"] for o in offers} | {page_host}
+        same = [o for o in one_per_shop([dict(r) for r in db().execute(
+                    f"SELECT {COLS} FROM products WHERE name_key = ? AND currency = ?", (key, currency))])
+                if o["shop"].removeprefix("www.") not in taken and o["shop"] not in taken and o["shop"] not in SECOND_HAND]
+        out["same_name"] = [public(o) for o in same[:12]] if len(key.split()) >= 2 else []
         if not offers:
-            out["similar"] = [public(o) for o in similar(key, price, currency) if o["shop"].removeprefix("www.") != page_host]
+            out["similar"] = [public(o) for o in similar(key, price, currency)
+                              if o["shop"].removeprefix("www.") != page_host and o["name_key"] != key]
         out["dupes"] = dupes_of(item_id, limit=4) if item_id else page_dupes(title, price, currency, offers)
         return out
 
@@ -380,6 +402,8 @@ def lookup(title, price=None, currency="ALL", url=""):
             q["known_page"] = True
             return answer(compared(here["item_id"]), here["item_id"])
         key, size = here["name_key"] or key, (here["size_val"], here["size_unit"]) if here["size_val"] else size
+        if size and size[1] and not q["size_label"]:
+            q["size_label"] = size_label(*size)  # the page's own listing states it
 
     # 2. otherwise by name, with match.py's rules: a specific name, and the same size
     words = key.split()
