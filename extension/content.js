@@ -114,7 +114,8 @@
     const exact = (data.exact || []).filter((o) => o.in_stock);
     const similar = exact.length ? [] : data.similar || [];
     const dupes = data.dupes || [];
-    if (!exact.length && !similar.length && !dupes.length) return;
+    if (!exact.length && !similar.length && !dupes.length)
+      return note("Ky produkt nuk gjendet në dyqanet e tjera që krahasojmë.", 7000);
     const q = data.query || {};
     const el = document.createElement("div");
     el.id = "shporta-host";
@@ -140,7 +141,9 @@
         panel.append(node("a", { class: "more", href: `${SITE}/produkt/${encodeURIComponent(data.item)}`, target: "_blank", rel: "noopener",
           text: `+${data.unconfirmed} dyqane e kanë pa shkruar madhësinë: shiko te shporta.app` }));
     } else {
-      panel.append(node("div", { class: "s", text: "Nuk e gjetëm këtë produkt, në këtë madhësi, në dyqane të tjera." }));
+      panel.append(node("div", { class: "s", text: q.size_label
+        ? `Nuk e gjetëm këtë produkt, në madhësinë ${q.size_label}, në dyqane të tjera.`
+        : "Nuk e gjetëm këtë produkt në dyqane të tjera." }));
     }
     if (similar.length) {
       const box = node("div", { class: "alt" }, node("h4", { text: "Të ngjashme: jo i njëjti produkt" }));
@@ -158,6 +161,21 @@
     document.documentElement.appendChild(el);
   }
 
+  // A small note in the same corner, so the shopper always sees that shporta looked: while it searches
+  // (the free server can take up to a minute to wake), when nothing was found, or when the server didn't answer.
+  function note(text, closeAfter) {
+    document.getElementById("shporta-host")?.remove();
+    const el = document.createElement("div");
+    el.id = "shporta-host";
+    const root = el.attachShadow({ mode: "open" });
+    const close = node("button", { class: "x", title: "Mbyll", "aria-label": "Mbyll", text: "×" });
+    close.onclick = () => el.remove();
+    root.append(node("style", { text: STYLE }),
+      node("div", { class: "p", role: "status" }, close, node("div", { class: "brand", text: "shporta" }), node("div", { class: "s", text })));
+    document.documentElement.appendChild(el);
+    if (closeAfter) setTimeout(() => el.isConnected && el.remove(), closeAfter);
+  }
+
   let lastKey = "";
   let retried = false;
   function check() {
@@ -165,9 +183,11 @@
     const key = p ? p.url + "|" + p.price : "";
     if (!p || key === lastKey) return;
     lastKey = key;
+    note("Po krahasoj çmimet në dyqanet shqiptare…");
     chrome.runtime.sendMessage({ type: "lookup", product: p }, (res) => {
       if (res && res.ok) render(p, res.data);
       else if (!retried) { retried = true; lastKey = ""; setTimeout(check, 20000); } // server may have been waking up
+      else note("shporta.app nuk u përgjigj. Rifresko faqen pas pak.", 8000);
     });
   }
 
