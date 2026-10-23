@@ -154,3 +154,42 @@ multibrand.al
 inglot.al
 lente.al
 # pierrecardin.al (Shopify; homepage answered 429 to probe -> blocked, not retried)
+# discovery-2 (agent)
+mimi.al
+freshline.al
+eurofarma.al
+bluepharma.al
+mybaby.al
+pernenat.shop
+uni-cosmetics.com
+shljewelry.com
+pelinku.com
+farmaciababamusta.com
+beekids.al
+pinkyalbania.com
+berberalb.com
+flutrashoes.com
+medigreen.al
+# discovery-2 queued, not yet scraped (probed OK)
+padas.al
+iriscosmetic.al
+farmacibruna.al
+herballine.al
+www.joma.al
+organicbeauty.al
+seoulskincare.shop
+ammarisleather.com
+illyrianbloodline.com
+sermacosmetics.com
+# discovery-2 blocked/down at probe
+ohbaby.al
+olavitaskin.com
+alexandraorganic.al
+sagema.al
+colispharmacy.al
+hairpharma.al
+mineyourbeauty.com
+maisondeparfum.eu
+kiabi.al
+preciosa.al
+aladini.al

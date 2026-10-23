@@ -1,6 +1,10 @@
 """Balkan Sport (balkansport.com.al): JSON-LD is a schema.org ProductGroup whose hasVariant entries
 (one per colour) carry the price in offers.priceSpecification. The sitemap lists every product in
-/sq/ and /en/; we read only /sq/products/ pages. One row per colour variant (sku)."""
+/sq/ and /en/; we read only /sq/products/ pages. One row per colour variant (sku).
+
+The shop appends every viewed product id to a `recent_product_ids` cookie; after ~650 pages the Cookie header is
+too large and every request gets HTTP 400 (earlier runs "stopped" at ~1,000 rows because of this). We drop that
+cookie before each request; the session cookie is kept."""
 import importlib.util
 import json
 import re
@@ -24,6 +28,8 @@ def _blocks(html):
 def _rows(client, max_pages):
     urls = [u for u in S.sitemap_urls(client, client.base + "/sitemap_blk.xml.gz") if "/sq/products/" in u]
     for url in list(dict.fromkeys(urls))[:max_pages]:
+        for ck in [ck for ck in client.s.cookies if ck.name == "recent_product_ids"]:
+            client.s.cookies.clear(ck.domain, ck.path, ck.name)
         r = client.get(url)
         if r.status_code != 200:
             continue
