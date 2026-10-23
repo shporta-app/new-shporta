@@ -355,29 +355,44 @@ SYNONYMS = [
     {"leather", "lekure"}, {"cotton", "pambuk"}, {"women", "femra", "grua"}, {"men", "meshkuj", "burra"},
     {"kids", "femije"}, {"cream", "krem", "creme"}, {"perfume", "parfum", "parfume"}, {"shampoo", "shampo"},
     {"cleanser", "pastrues"}, {"sunscreen", "spf", "dielli"}, {"lipstick", "buzekuq"}, {"mascara", "maskara", "rimel"},
+    {"high", "larte"}, {"waist", "shtrat", "bel", "beli", "rise"}, {"wide", "gjere"}, {"slim", "ngushte", "skinny"},
+    {"straight", "drejte"}, {"oversize", "oversized"}, {"blazer", "xhakete"},
 ]
 ALTS = collections.defaultdict(set)
 for _g in SYNONYMS:
     for _w in _g:
         ALTS[_w] |= _g
+# product-type words: a similar product must be the same kind of thing (jeans with jeans, never with a dress)
+TYPE_WORDS = {w for g in SYNONYMS[:24] for w in g} | {"blazer", "kostum", "hoodie", "top", "cardigan", "kardigan"}
+
+
+def known_word(w):
+    try:
+        return db().execute("SELECT 1 FROM words WHERE words MATCH ? LIMIT 1", (f'"{w}"',)).fetchone() is not None
+    except sqlite3.Error:
+        return False
 
 
 def similar(key, price, currency, limit=8):
-    """Products covering most of the title's words (in either language), cheaper ones first."""
+    """Products covering most of the title's words (in either language), cheaper ones first.
+    Words no other shop uses (a brand's line names like Zara's "TRF", "Z1975") are ignored."""
     q = [w for w in set(key.split()) if re.fullmatch(r"[a-z0-9]+", w)]
-    if len(q) < 2:
+    q = [w for w in q if any(known_word(a) for a in (ALTS.get(w) or {w}))]
+    types = [w for w in q if w in TYPE_WORDS]
+    if len(q) < 2 and not types:  # one word is enough only when it names the kind of product ("blazer")
         return []
     groups = [sorted(ALTS.get(w) or {w}) for w in q]
     match = " OR ".join("(" + " OR ".join(f'"{a}"' for a in g) + ")" for g in groups)
     cand = [dict(r) for r in db().execute(
         f"""SELECT {COLS} FROM products WHERE id IN (SELECT rowid FROM words WHERE words MATCH ? ORDER BY rank LIMIT 3000)
             AND in_stock = 1 AND currency = ?""", (match, currency))]
-    need = max(2, round(len(q) * 0.66))
+    need = max(min(2, len(q)), round(len(q) * 0.6))
     scored = []
     for o in cand:
         kw = set((o["name_key"] or "").split())
         hits = sum(1 for g in groups if kw & set(g))
-        if hits >= need:
+        same_type = not types or any(kw & (ALTS.get(t) or {t}) for t in types)
+        if hits >= need and same_type:
             scored.append((hits / len(q), -len(kw), o))
     scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
     seen, per_shop, res = set(), collections.Counter(), []

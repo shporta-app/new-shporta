@@ -46,8 +46,28 @@
     return { title: title.trim(), price, currency: m("product:price:currency") || m("og:price:currency") || "ALL" };
   }
 
+  // Some big shops (Zara) put no product data in the page's code: only the visible text "3.950 ALL".
+  // Used only on pages that say they are a product page (og:type=product) or have a product-style address.
+  const MONEY = /(?:(€|EUR|ALL|Lek[ëe]?)\s*(\d[\d.,\s]*\d|\d))|(?:(\d[\d.,\s]*\d|\d)\s*(ALL|Lek[ëe]?|L(?![a-z])|€|EUR))/i;
+  function fromPage() {
+    const og = (p) => document.querySelector(`meta[property="${p}"]`)?.content;
+    const looksLikeProduct = og("og:type") === "product" || /[-/]p\d{5,}|\/product[s]?\/|\/produkt/i.test(location.pathname);
+    if (!looksLikeProduct) return null;
+    const title = (og("og:title") || document.querySelector("h1")?.textContent || "").trim();
+    const els = [...document.querySelectorAll('[class*="price" i], [data-qa*="price" i], [itemprop="price"]')]
+      .filter((e) => e.offsetParent !== null && !/old|original|crossed|strike|before|was|regular/i.test(e.className + " " + e.parentElement?.className));
+    els.sort((a, b) => /current|sale|final|now/i.test(b.className) - /current|sale|final|now/i.test(a.className));
+    for (const el of els) {
+      const m = (el.textContent || "").replace(/\s+/g, " ").match(MONEY);
+      if (!m) continue;
+      const price = num(m[2] || m[3]);
+      if (title && price) return { title, price, currency: m[1] || m[4] };
+    }
+    return null;
+  }
+
   function detect() {
-    const p = fromJsonLd() || fromMeta();
+    const p = fromJsonLd() || fromMeta() || fromPage();
     if (!p) return null;
     p.currency = CUR[String(p.currency).trim().toUpperCase()] || String(p.currency).toUpperCase();
     p.url = location.href;
