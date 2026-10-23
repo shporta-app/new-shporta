@@ -57,7 +57,7 @@ COUNT_RE = re.compile(r"(\d{1,4})\s*(tablets?|tableta|tabs?|caps(ules?)?|kapsula
                       r"ampula|ampoules?|cope|pcs|pieces|wipes|letra)\b")
 BARE_SIZE_RE = re.compile(r"\s[-–]\s*(\d{1,4})\s*$")  # "Cream - 50" (variant title without a unit)
 # shop labels around the size ("vëllimi: 236 ml", "Masa: 100 ML", "50 ml x 1")
-LABELS_RE = re.compile(r"\b(vellimi|volumi|masa|madhesia|sasia|size|volume|format|permbajtja)\b\s*:?|\bx\s*1\b|\b1\s*x\b")
+LABELS_RE = re.compile(r"\b(vellimi|volumi|masa|madhesia|sasia|size|volume|format|permbajtja|ngjyra|color|colour)\b\s*:?|\bx\s*1\b|\b1\s*x\b")
 # the same word in Albanian and English, or spelled two ways
 SAME = {"krem": "cream", "creme": "cream", "kremi": "cream", "shampo": "shampoo", "shampon": "shampoo", "xhel": "gel",
         "locion": "lotion", "maske": "mask", "masque": "mask", "ampula": "ampoule", "shkume": "foam", "mousse": "foam",
