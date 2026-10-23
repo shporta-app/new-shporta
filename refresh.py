@@ -1,7 +1,8 @@
 """Re-collect every shop that worked last time, then rebuild matches and the report.
 
-    python refresh.py                 # all shops with status ok/error, one at a time
+    python refresh.py                 # all shops with status ok/error, 4 shops at a time
     python refresh.py --only beauty   # one category
+    python refresh.py --workers 2     # fewer at once (each shop still gets one request at a time, at its own pace)
 
 Blocked shops are never retried here (they said no). Run it once a day: each run adds a row per product to the
 `prices` table, which is the price history the "is this discount real?" check needs.
@@ -14,7 +15,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import scrape
 
 HERE = Path(__file__).parent
 # Shops that are slow at their own Crawl-delay: cap pages per run so one shop can't take the whole night.
@@ -24,21 +24,34 @@ MAX_PAGES = {"myoptika.al": 300, "www.lcwaikiki.al": 3000, "sportvision.al": 150
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="category to refresh")
+    ap.add_argument("--workers", type=int, default=4, help="shops collected at the same time")
+    ap.add_argument("--skip", nargs="*", default=[], help="shops another job is already collecting")
     a = ap.parse_args()
     con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
     sql = "SELECT domain, category, platform FROM shops WHERE status IN ('ok', 'error')"
-    shops = con.execute(sql + (" AND category = ?" if a.only else "") + " ORDER BY products", (a.only,) if a.only else ()).fetchall()
+    shops = con.execute(sql + (" AND category = ?" if a.only else "") + " ORDER BY products DESC", (a.only,) if a.only else ()).fetchall()
     con.close()
 
     t0 = time.time()
     print(f"{datetime.now():%Y-%m-%d %H:%M} refreshing {len(shops)} shops", flush=True)
-    for domain, category, platform in shops:
-        # custom adapters are picked up by domain; pass the platform only for the built-in ones
-        forced = platform if platform in ("woocommerce", "shopify", "jsonld") else None
-        try:
-            scrape.run(domain, category, forced, MAX_PAGES.get(domain, 3000))
-        except Exception as e:  # one broken shop must not stop the rest
-            print(f"{domain}: crashed {type(e).__name__}: {e}", flush=True)
+    # Different shops in parallel, each in its own process (biggest first, so the long ones don't finish last).
+    # Politeness is per shop and unchanged: one request at a time, robots.txt and Crawl-delay obeyed.
+    queue, running = [x for x in shops if x[0] not in a.skip], {}
+    while queue or running:
+        while queue and len(running) < a.workers:
+            domain, category, platform = queue.pop(0)
+            # custom adapters are picked up by domain; pass the platform only for the built-in ones
+            cmd = [sys.executable, str(HERE / "scrape.py"), domain, "--category", category,
+                   "--max-pages", str(MAX_PAGES.get(domain, 3000))]
+            if platform in ("woocommerce", "shopify", "jsonld"):
+                cmd += ["--platform", platform]
+            running[domain] = subprocess.Popen(cmd, cwd=HERE)
+        time.sleep(2)
+        for domain, proc in list(running.items()):
+            if proc.poll() is not None:  # one broken shop must not stop the rest
+                if proc.returncode:
+                    print(f"{domain}: exited with {proc.returncode}", flush=True)
+                del running[domain]
     for step in ("match.py", "make_report.py"):
         subprocess.run([sys.executable, str(HERE / step)], check=False)
     print(f"done in {(time.time() - t0) / 3600:.1f} h", flush=True)
