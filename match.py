@@ -71,6 +71,13 @@ PERFUME_WORDS = {"eau", "parfum", "toilette", "edp", "edt", "extrait", "cologne"
 GENDER_LABEL_RE = re.compile(r"\((women|woman|men|man|unisex|femra|meshkuj|for (wo)?men)\)|\bper (femra|meshkuj)\b|\(?unisex\)?")
 
 
+# Shops that sell used / vintage items: never "the same product" as a new one, and labelled wherever they appear.
+SECOND_HAND = {"thrift.al"}
+# a title that says who it's for; "(Men)" and "(Women)" on the same name are two different perfumes
+MEN_RE = re.compile(r"(men|man|homme|uomo|meshkuj|him|male|masculin)")
+WOMEN_RE = re.compile(r"(women|woman|femme|donna|femra|her|female|feminin)")
+
+
 def fold(s):
     s = unicodedata.normalize("NFKD", s.lower().replace(" ", " ").replace("\xa0", " "))
     return "".join(ch for ch in s if not unicodedata.combining(ch))
@@ -167,7 +174,7 @@ def main():
     for pid, shop, title, price, cur in con.execute("SELECT id, shop, title, price, currency FROM products WHERE price > 0"):
         key, size = parse(title)
         price_of[pid] = (price, cur)
-        if len(key.split()) >= 2:  # one word ("Bluza") is too vague to match on
+        if len(key.split()) >= 2 and shop not in SECOND_HAND:  # one word ("Bluza") is too vague to match on
             by_name[key].append((pid, shop, size))
 
     # rule 2: brand words = tokens of the shops' brand fields, and words that open product names in 2+ shops
@@ -269,6 +276,21 @@ def main():
         pages[(gid, shop)].add((page, price))
     ambiguous = {k for k, v in pages.items() if len({p for p, _ in v}) > 1 and len({pr for _, pr in v}) > 1}
     rows = [(p, g) for p, g in rows if (g, info[p][0]) not in ambiguous]
+
+    # A group whose titles say both "for men" and "for women" (and not "unisex" / "him & her") mixes two
+    # products that share a name: keep the side most shops agree on.
+    titles = {pid: fold(t) for pid, t in con.execute("SELECT id, title FROM products WHERE price > 0")}
+    members = collections.defaultdict(list)
+    for pid, gid in rows:
+        members[gid].append(pid)
+    drop = set()
+    for gid, pids in members.items():
+        men = {p for p in pids if MEN_RE.search(titles[p]) and not WOMEN_RE.search(titles[p])}
+        women = {p for p in pids if WOMEN_RE.search(titles[p]) and not MEN_RE.search(titles[p])}
+        if men and women:
+            drop |= men if len(men) < len(women) else women if len(women) < len(men) else men | women
+            stats["men/women label conflict"] += 1
+    rows = [(p, g) for p, g in rows if p not in drop]
 
     # keep only groups that really span 2+ shops after the size split
     shops_per_group = collections.defaultdict(set)

@@ -29,7 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import dupes
-from match import GENERIC, parse, same_size, size_by_price, size_label
+from match import GENERIC, SECOND_HAND, parse, same_size, size_by_price, size_label
 
 HERE = Path(__file__).parent
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -101,11 +101,20 @@ def verdict(price, currency, offers):
     return {"label": label, "lowest": lo, "median": med, "shops": len(peers), "save": round(price - lo) if price > lo else 0}
 
 
+def o_size_num(o):
+    v = o.get("_size_val")
+    return f"{v:g}" if v else None
+
+
 def public(o):
     out = {k: o[k] for k in ("id", "shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
            if k in o.keys()} | ({"item": o["item_id"]} if "item_id" in o.keys() else {})
-    if "size_val" in o.keys():
-        out["size"] = size_label(o["size_val"], o["size_unit"])  # what this shop's own listing says; None = not stated
+    if "size_val" in o.keys():  # what this shop's own listing says; None = not stated (a bare number may be a shade)
+        out["size"] = size_label(o["size_val"], o["size_unit"]) if o["size_unit"] else None
+    if "size_val" in o.keys() and o["size_val"]:
+        out["_size_val"] = o["size_val"]
+    if o["shop"] in SECOND_HAND:
+        out["used"] = True  # a used / vintage item: always labelled
     return out
 
 
@@ -277,6 +286,10 @@ def item(item_id):
             out.append(o["item_id"])
     it["similar"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(out))})", out) if out else []
     it["category_label"] = CATEGORIES.get(it["cat"], "Të tjera")
+    it["used"] = any(o["shop"] in SECOND_HAND for o in it["offers"])
+    for o in it["offers"]:  # a shop that writes only "55" in a 55 g comparison: same number, show it with the unit
+        if not o.get("size") and it["size"] and o_size_num(o) == it["size"].split()[0]:
+            o["size"] = it["size"]
     it["dupes"] = dupes_of(item_id)
     it["dupe_of"] = originals_of(item_id)
     return it
@@ -311,13 +324,17 @@ def lookup(title, price=None, currency="ALL", url=""):
     query.size_label is the size compared; query.size_assumed is true when the page itself doesn't state it."""
     key, size = parse(title or "")
     page_host = urlparse(url).netloc.lower().removeprefix("www.") if url else ""
-    q = {"title": title, "price": price, "currency": currency, "size_label": size_label(*size) if size else None,
+    q = {"title": title, "price": price, "currency": currency, "size_label": size_label(*size) if size and size[1] else None,
          "size_assumed": False}
 
     def answer(offers, item_id=None):
         offers = [o for o in one_per_shop(offers) if o["shop"].removeprefix("www.") != page_host]  # never the shop you're on
         item_id = item_id or next((o["item_id"] for o in offers if o["item_id"].startswith("g")), None)
-        out = {"query": q, "exact": [public(o) for o in offers[:20]], "verdict": verdict(q["price"], currency, offers),
+        exact = [public(o) for o in offers[:20]]
+        for o in exact:  # a shop that writes only "55" in a 55 g comparison: same number, show it with the unit
+            if not o.get("size") and q.get("size_label") and o_size_num(o) == q["size_label"].split()[0]:
+                o["size"] = q["size_label"]
+        out = {"query": q, "exact": exact, "verdict": verdict(q["price"], currency, offers),
                "item": item_id}
         if item_id:  # shops selling it without stating the size: only counted, the product page lists them
             out["unconfirmed"] = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()[0] or 0
@@ -373,7 +390,7 @@ def lookup(title, price=None, currency="ALL", url=""):
     elif len(options) > 1 and price:
         pick = size_by_price(price, medians)  # several sizes: only when the price clearly says which one
     if pick:
-        q["size_label"], q["size_assumed"] = size_label(*pick), True
+        q["size_label"], q["size_assumed"] = size_label(*pick) if pick[1] else None, True
         return answer([o for o in sized if same_size(pick, (o["size_val"], o["size_unit"]))])
     if not options and price:
         # no shop states a size: the same name at nearly the same price (as match.py's unsized groups)
@@ -440,6 +457,10 @@ for _g in SYNONYMS:
         ALTS[_w] |= _g
 # product-type words: a similar product must be the same kind of thing (jeans with jeans, never with a dress)
 TYPE_WORDS = {w for g in SYNONYMS[:24] for w in g} | {"blazer", "kostum", "hoodie", "top", "cardigan", "kardigan"}
+# the cut of a garment: wide-leg jeans are only similar to wide-leg jeans, never to skinny ones
+CUTS = [{"wide", "gjere", "palazzo"}, {"straight", "drejte"}, {"slim", "ngushte", "skinny"}, {"flare", "bootcut"},
+        {"barrel"}, {"baggy"}, {"mom"}, {"cargo"}, {"oversize", "oversized"}, {"cropped"}, {"regular"}]
+CUT_OF = {w: frozenset(g) for g in CUTS for w in g}
 
 
 # a colour ("Jeans … - E zezë") shouldn't decide what counts as a similar product
@@ -460,20 +481,22 @@ def similar(key, price, currency, limit=8):
     q = [w for w in set(key.split()) if re.fullmatch(r"[a-z0-9]+", w) and w not in COLOURS]
     q = [w for w in q if any(known_word(a) for a in (ALTS.get(w) or {w}))]
     types = [w for w in q if w in TYPE_WORDS]
+    cuts = {CUT_OF[w] for w in set(key.split()) if w in CUT_OF}
     if len(q) < 2 and not types:  # one word is enough only when it names the kind of product ("blazer")
         return []
     groups = [sorted(ALTS.get(w) or {w}) for w in q]
     match = " OR ".join("(" + " OR ".join(f'"{a}"' for a in g) + ")" for g in groups)
     cand = [dict(r) for r in db().execute(
         f"""SELECT {COLS} FROM products WHERE id IN (SELECT rowid FROM words WHERE words MATCH ? ORDER BY rank LIMIT 3000)
-            AND in_stock = 1 AND currency = ?""", (match, currency))]
+            AND in_stock = 1 AND currency = ?""", (match, currency)) if r["shop"] not in SECOND_HAND]  # never used items
     need = max(min(2, len(q)), round(len(q) * 0.6))
     scored = []
     for o in cand:
         kw = set((o["name_key"] or "").split())
         hits = sum(1 for g in groups if kw & set(g))
         same_type = not types or any(kw & (ALTS.get(t) or {t}) for t in types)
-        if hits >= need and same_type:
+        same_cut = not cuts or (all(kw & c for c in cuts) and not any(kw & c for c in set(CUT_OF.values()) - cuts))
+        if hits >= need and same_type and same_cut:
             scored.append((hits / len(q), -len(kw), o))
     scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
     seen, per_shop, res = set(), collections.Counter(), []

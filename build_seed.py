@@ -90,8 +90,9 @@ def main():
             o[16] = 1 if o in main else 0
         extra_shops = len({o[1] for o in offs} - {o[1] for o in main})
         size = None
-        if sized:
-            common = collections.Counter((o[11], o[12]) for o in sized if o[12]) or collections.Counter((o[11], o[12]) for o in sized)
+        # only a size with a unit is shown as "the size we compare": a bare "- 120" may be a shade number
+        common = collections.Counter((o[11], o[12]) for o in sized if o[12])
+        if common:
             size = size_label(*common.most_common(1)[0][0])
         lek = [o for o in main if o[8] == "ALL"]
         pool = lek or main

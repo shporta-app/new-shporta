@@ -271,6 +271,7 @@ async function pageItem(id) {
       <div class="pic">${img(it.image, it.title)}</div>
       <div>
         <h1>${esc(it.title)}</h1>
+        ${it.used ? `<p class="size-warn">Artikull i përdorur (second-hand / vintage). Nuk e krahasojmë me produkte të reja.</p>` : ""}
         ${it.size ? `<p class="size-line">Krahasojmë vetëm madhësinë <b>${esc(it.size)}</b>. Çdo dyqan më poshtë e shkruan këtë madhësi te produkti.</p>` : ""}
         <div class="summary">
           <div class="low">Më i liri<b>${lek(lo, it.currency)}</b></div>
