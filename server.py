@@ -64,6 +64,13 @@ def meta(key):
 
 CATEGORIES = dict(ast.literal_eval(meta("categories") or "[]"))
 COLS = "id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id"
+
+
+def page_key(url):
+    u = (url or "").lower().split("#")[0].split("?")[0].rstrip("/")
+    for pre in ("https://", "http://"):
+        u = u.removeprefix(pre)
+    return u.removeprefix("www.") or None
 ITEM_COLS = "id, title, image, cat, shops, in_stock_shops, min_price, max_price, currency, save_pct, size_note"
 
 
@@ -290,6 +297,19 @@ def lookup(title, price=None, currency="ALL", url=""):
     page_host = urlparse(url).netloc.lower().removeprefix("www.") if url else ""
     # Same rules as match.py: a specific name (3+ words, not only generic words like "fustan midi"),
     # and sizes stated on both sides and equal; with no size anywhere, prices must agree within 25%.
+    # 1. a page we collected: we know exactly which product it is, whatever name the page shows
+    #    (several sizes on one page: the page's price says which one is selected)
+    mine = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE page = ?", (page_key(url),))] if url else []
+    if mine:
+        here = min(mine, key=lambda o: abs(o["price"] - price) if price else 0)
+        if here["item_id"].startswith("g"):
+            exact = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE item_id = ?", (here["item_id"],))]
+            offers = [o for o in one_per_shop(exact) if o["shop"].removeprefix("www.") != page_host]
+            return {"query": {"title": title, "price": price, "currency": currency, "known_page": True},
+                    "exact": [public(o) for o in offers[:20]], "verdict": verdict(price, currency, offers),
+                    "dupes": dupes_of(here["item_id"], limit=4)}
+        key, size = here["name_key"] or key, (here["size_val"], here["size_unit"]) if here["size_val"] else size
+    # 2. otherwise by name: same rules as match.py
     words = key.split()
     specific = len(words) >= 3 and any(w not in GENERIC for w in words)
     cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))] if specific else []
@@ -301,7 +321,8 @@ def lookup(title, price=None, currency="ALL", url=""):
     out = {"query": {"title": title, "price": price, "currency": currency, "key": key, "size": size},
            "exact": [public(o) for o in offers[:20]], "verdict": verdict(price, currency, offers)}
     if not offers:
-        out["similar"] = [public(o) for o in similar(key, price, currency)]
+        out["similar"] = [public(o) for o in similar(key, price, currency)
+                          if o["shop"].removeprefix("www.") != page_host]  # never the shop you're on
     out["dupes"] = page_dupes(title, price, currency, offers)
     return out
 

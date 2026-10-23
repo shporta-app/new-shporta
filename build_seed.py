@@ -29,6 +29,14 @@ OUT = HERE / "seed" / "phia-api.db"
 from categories import CATEGORIES, classify, fold  # noqa: E402  (categories.py explains the rules)
 
 
+def page_key(url):
+    """A shop page's address without scheme, www., query or trailing slash: how the extension recognises our pages."""
+    u = (url or "").lower().split("#")[0].split("?")[0].rstrip("/")
+    for pre in ("https://", "http://"):
+        u = u.removeprefix(pre)
+    return u.removeprefix("www.") or None
+
+
 def main():
     OUT.parent.mkdir(exist_ok=True)
     OUT.unlink(missing_ok=True)
@@ -37,7 +45,7 @@ def main():
     dst.executescript("""
         CREATE TABLE products (id INTEGER PRIMARY KEY, shop TEXT, title TEXT, brand TEXT, url TEXT, image TEXT,
                                price REAL, regular_price REAL, currency TEXT, in_stock INTEGER,
-                               name_key TEXT, size_val REAL, size_unit TEXT, cat TEXT, item_id TEXT);
+                               name_key TEXT, size_val REAL, size_unit TEXT, cat TEXT, item_id TEXT, page TEXT);
         CREATE TABLE matches (product_id INTEGER PRIMARY KEY, group_id TEXT);
         CREATE TABLE shops (domain TEXT PRIMARY KEY, category TEXT, products INTEGER);
         CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT, image TEXT, cat TEXT, shops INTEGER, in_stock_shops INTEGER,
@@ -58,7 +66,7 @@ def main():
         # one listing item per matched product, otherwise per product page (Shopify ?variant= rows share a page)
         item = "g" + gid if gid else "p" + hashlib.md5(f"{shop}|{(url or str(pid)).split('?')[0]}".encode()).hexdigest()[:12]
         rows.append([pid, shop, title, brand, url, image, price, reg, cur, stock, key,
-                     size[0] if size else None, size[1] if size else None, cat, item])
+                     size[0] if size else None, size[1] if size else None, cat, item, page_key(url)])
 
     # items: aggregate offers
     by_item = collections.defaultdict(list)
@@ -91,7 +99,7 @@ def main():
         size_note = 0 if all(sized) else 2 if not any(sized) else 1
         items.append((iid, title, image, cat, len(shops), len(live_shops), lo, hi, pool[0][8], save, search[:600], size_note))
 
-    dst.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    dst.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", items)
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())
     dst.executemany("INSERT INTO shops VALUES (?,?,?)",
@@ -102,6 +110,7 @@ def main():
     dst.executescript("""
         CREATE INDEX products_key ON products(name_key);
         CREATE INDEX products_item ON products(item_id);
+        CREATE INDEX products_page ON products(page);
         CREATE INDEX matches_group ON matches(group_id);
         CREATE INDEX items_cat ON items(cat, shops DESC, save_pct DESC);
         CREATE INDEX items_deals ON items(save_pct DESC) WHERE shops >= 2;
