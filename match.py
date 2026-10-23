@@ -74,8 +74,8 @@ GENDER_LABEL_RE = re.compile(r"\((women|woman|men|man|unisex|femra|meshkuj|for (
 # Shops that sell used / vintage items: never "the same product" as a new one, and labelled wherever they appear.
 SECOND_HAND = {"thrift.al"}
 # a title that says who it's for; "(Men)" and "(Women)" on the same name are two different perfumes
-MEN_RE = re.compile(r"(men|man|homme|uomo|meshkuj|him|male|masculin)")
-WOMEN_RE = re.compile(r"(women|woman|femme|donna|femra|her|female|feminin)")
+MEN_RE = re.compile(r"\b(men|man|homme|uomo|meshkuj|him|male|masculin)\b")
+WOMEN_RE = re.compile(r"\b(women|woman|femme|donna|femra|her|female|feminin)\b")
 
 
 def fold(s):
@@ -122,7 +122,10 @@ def parse(title):
         else:
             seps = [m.end() for m in VARIANT_SEP_RE.finditer(t)]
             last = metric[-1]
-            if seps and last.start() >= seps[-1] and not re.search(r"\+|,|\bdhe\b|\band\b", t[seps[-1]:]):
+            tail = {size_of(m) for m in metric if seps and m.start() >= seps[-1]}
+            if len(tail) > 1 and re.search(r"/|\bor\b|\bose\b", t[seps[-1]:]):
+                size = None  # the title offers a choice ("- 50 ml / 100 ml"): we can't tell which one this price is
+            elif seps and last.start() >= seps[-1] and not re.search(r"\+|,|\bdhe\b|\band\b", t[seps[-1]:]):
                 size = size_of(last)  # the variant's own size wins over the name's: "Shampo *250ml - 500ml" is 500 ml
             else:
                 # a set ("Toner 30ml + Serum 10ml + Cream 20g"): only the same set matches it
@@ -290,7 +293,27 @@ def main():
         if men and women:
             drop |= men if len(men) < len(women) else women if len(women) < len(men) else men | women
             stats["men/women label conflict"] += 1
-    rows = [(p, g) for p, g in rows if p not in drop]
+    # A name that also exists as a separate men's or women's line ("Light Blue" next to "Light Blue Pour
+    # Homme"): there the label is part of what the product is, so "(Men)" titles match only other "(Men)" titles.
+    key_of = {pid: key for key, offs in by_name.items() for pid, _, _ in offs}
+    men_words = {"men", "man", "homme", "uomo", "him", "male", "masculin", "meshkuj"}
+    women_words = {"women", "woman", "femme", "donna", "her", "female", "feminin", "femra"}
+    has_men_line, has_women_line = set(), set()
+    for key in by_name:
+        words = set(key.split())
+        for gender, line in ((men_words, has_men_line), (women_words, has_women_line)):
+            if words & gender:
+                line.add(" ".join(sorted(words - gender - {"pour", "for"})))
+    relabel, gendered = {}, has_men_line | has_women_line
+    for gid, pids in members.items():
+        for p in pids:
+            k = key_of.get(p)
+            if k in gendered:
+                men, women = bool(MEN_RE.search(titles[p])), bool(WOMEN_RE.search(titles[p]))
+                if men != women:
+                    relabel[p] = hashlib.md5(f"{gid}|{'men' if men else 'women'}".encode()).hexdigest()[:12]
+                    stats["gender label on a name with a gendered sibling line"] += 1
+    rows = [(p, relabel.get(p, g)) for p, g in rows if p not in drop]
 
     # keep only groups that really span 2+ shops after the size split
     shops_per_group = collections.defaultdict(set)
