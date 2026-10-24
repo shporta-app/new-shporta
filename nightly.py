@@ -93,8 +93,8 @@ def indexnow():
 PC_ONLY = [l.split()[0] for l in (HERE / "pc_only.txt").read_text(encoding="utf-8").splitlines()
            if l.strip() and not l.startswith("#")]
 SERVER = "root@194.146.13.188"
-INBOX = Path("/srv/shporta/inbox")
-BACKUP = Path("/srv/shporta/backup")
+REMOTE_INBOX, REMOTE_BACKUP = "/srv/shporta/inbox", "/srv/shporta/backup"  # Linux paths, also when written on Windows
+INBOX, BACKUP = Path(REMOTE_INBOX), Path(REMOTE_BACKUP)
 
 
 def server_nightly():
@@ -189,13 +189,13 @@ def export_pc_only():
     key = str(Path.home() / ".ssh" / "shporta_vps")
     ssh = ["-i", key, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
     # into the inbox under a temporary name, renamed when complete, so the server never merges half a file
-    run("scp", *ssh, str(out), f"{SERVER}:{INBOX}/{out.name}.part")
-    run("ssh", *ssh, SERVER, f"mv {INBOX}/{out.name}.part {INBOX}/{out.name} && chown shporta:shporta {INBOX}/{out.name}")
+    run("scp", *ssh, str(out), f"{SERVER}:{REMOTE_INBOX}/{out.name}.part")
+    run("ssh", *ssh, SERVER, f"mv {REMOTE_INBOX}/{out.name}.part {REMOTE_INBOX}/{out.name} && chown shporta:shporta {REMOTE_INBOX}/{out.name}")
     out.unlink()
     log(f"sent {out.name} to the server")
     # and the other way: the newest backup of the full price history, so a copy also lives off the server
     (HERE / "backup").mkdir(exist_ok=True)
-    run("scp", *ssh, f"{SERVER}:{BACKUP}/latest.db.gz", str(HERE / "backup" / "phia-latest.db.gz"), check=False)
+    run("scp", *ssh, f"{SERVER}:{REMOTE_BACKUP}/latest.db.gz", str(HERE / "backup" / "phia-latest.db.gz"), check=False)
 
 
 def main():
