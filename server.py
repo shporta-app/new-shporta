@@ -15,6 +15,7 @@ Standard library only. All lookups are SQL against a read-only file, so memory s
 import ast
 import collections
 import gzip
+import hmac
 import json
 import math
 import mimetypes
@@ -32,6 +33,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import dupes
 import seo
+import stats
 from match import GENERIC, MEN_WORDS, PERFUME_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
 
 HERE = Path(__file__).parent
@@ -630,6 +632,25 @@ def outbound(pid, item_id, from_page, visitor, count=True):
     return u._replace(query="&".join(q)).geturl()
 
 
+def stats_page(data):
+    """The owner's private view of /api/stats (needs ADMIN_TOKEN)."""
+    e = lambda x: str(x).replace("&", "&amp;").replace("<", "&lt;")
+    kinds = ["visitors", "page", "product", "category", "search", "lookup", "click"]
+    names = {"visitors": "Vizitorë", "page": "Faqe të hapura", "product": "Produkte", "category": "Kategori",
+             "search": "Kërkime", "lookup": "Shtesa / Ndaj", "click": "Klikime te dyqanet"}
+    rows = "".join("<tr><td>" + e(d["day"]) + "".join(f"<td>{d.get(k, 0)}" for k in kinds) for d in reversed(data["days"]))
+    refs = "".join(f"<tr><td>{e(r)}<td>{n}" for r, n in data.get("referrers", []))
+    bots = "".join(f"<tr><td>{e(b)}<td>{n}<td>{e(last)}" for b, n, last in data.get("crawlers", []))
+    return f"""<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Statistika | shporta</title>
+<style>body{{font:15px system-ui;margin:24px;max-width:960px}}table{{border-collapse:collapse;margin:8px 0 28px}}
+td,th{{border-bottom:1px solid #ddd;padding:5px 10px;text-align:right}}td:first-child,th:first-child{{text-align:left}}</style>
+<h1>Statistika e shportës (30 ditët e fundit)</h1>
+<p>Pa cookies dhe pa ruajtur adresa: një vizitor numërohet një herë në ditë. Robotët e kërkimit dhe të AI-së numërohen veçmas.</p>
+<table><tr><th>Dita{"".join(f"<th>{names[k]}" for k in kinds)}{rows}</table>
+<h2>Nga erdhën vizitorët</h2><table><tr><th>Faqja<th>Vizita{refs or "<tr><td>Ende asnjë"}</table>
+<h2>Robotët e kërkimit dhe AI që lexojnë shportën</h2><table><tr><th>Roboti<th>Kërkesa<th>Hera e fundit{bots or "<tr><td>Ende asnjë"}</table>"""
+
+
 # ------------------------------------------------------------------ HTTP
 
 class Handler(BaseHTTPRequestHandler):
@@ -657,6 +678,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(204, b"")
 
+    def count(self, kind):
+        # behind Caddy the visitor's address is in X-Forwarded-For; stats.py never stores it, only a daily hash
+        ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+        stats.record(kind, ip, self.headers.get("User-Agent", ""), self.headers.get("Referer", ""))
+
+    def admin(self, q):
+        token = os.environ.get("ADMIN_TOKEN")
+        given = self.headers.get("X-Admin-Token") or q.get("token") or ""
+        return bool(token) and hmac.compare_digest(given.encode(), token.encode())
+
     def do_GET(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -670,18 +701,22 @@ class Handler(BaseHTTPRequestHandler):
         try:
             crawl = self.crawler_file(path)
             if crawl:
+                self.count("crawl")  # robots.txt, sitemaps, llms.txt: mostly search and AI crawlers
                 return self._send(200, crawl[1].encode(), crawl[0], cache="public, max-age=3600")
             if path == "/api/health":
                 return self._send(200, {"ok": True, "offers": db().execute("SELECT COUNT(*) FROM products").fetchone()[0]})
             if path == "/api/home":
                 return self._send(200, cached_home(), cache="public, max-age=600")
             if path.startswith("/api/category/"):
+                self.count("category")
                 res = category(path.rsplit("/", 1)[1], q)
                 return self._send(200 if res else 404, res or {"error": "Kjo kategori nuk ekziston."})
             if path.startswith("/api/item/"):
+                self.count("product")
                 res = item(path.rsplit("/", 1)[1])
                 return self._send(200 if res else 404, res or {"error": "Ky produkt nuk u gjet."})
             if path == "/api/search":
+                self.count("search")
                 return self._send(200, search(q.get("q", ""), page_num(q)))
             if path == "/api/dupes":
                 return self._send(200, dupe_list(q), cache="public, max-age=600")
@@ -695,6 +730,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 # HEAD is a link checker or prefetch, not a shopper: never counted as a click
                 dest = outbound(int(pid), q.get("i", "")[:20], q.get("f", "")[:20], visitor, count=self.command == "GET")
+                if dest and self.command == "GET":
+                    self.count("click")
                 if not dest:
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 self.send_response(302)
@@ -703,8 +740,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            if path == "/api/clicks" and os.environ.get("ADMIN_TOKEN") and q.get("token") == os.environ["ADMIN_TOKEN"]:
-                return self._send(200, dict(CLICKS.most_common()))
+            if path in ("/api/clicks", "/api/stats", "/statistika") and self.admin(q):
+                if path == "/api/clicks":
+                    return self._send(200, dict(CLICKS.most_common()))
+                data = stats.summary(int(q.get("days") or 30))
+                if path == "/api/stats":
+                    return self._send(200, data)
+                return self._send(200, stats_page(data).encode(), "text/html; charset=utf-8")
         except (ValueError, sqlite3.Error):
             return self._send(400, {"error": "Kërkesë e pavlefshme."})
         except Exception as e:  # never drop the connection without an answer
@@ -723,6 +765,8 @@ class Handler(BaseHTTPRequestHandler):
         # a page of the app: its own title, description, structured data and content, for search engines and AI crawlers
         try:
             code, page = seo.render(sys.modules[__name__], path, q)
+            if code == 200 and self.command == "GET":
+                self.count("page")
         except Exception as e:
             print(json.dumps({"error": f"seo {type(e).__name__}: {e}", "path": path[:200]}), flush=True)
             code, page = 200, (WEB / "index.html").read_text(encoding="utf-8")  # the app still works without it
@@ -758,6 +802,7 @@ class Handler(BaseHTTPRequestHandler):
             if price is not None and not (math.isfinite(price) and price > 0):
                 price = None  # "nan", "inf", 0 or negative: as if the page showed no price
             cur = str(data.get("currency") or "ALL")[:3].upper()
+            self.count("lookup")  # the extension or the share page asked about a shop's product page
             return self._send(200, lookup(str(data.get("title", ""))[:300], price, cur, str(data.get("url", ""))[:500]))
         except (ValueError, KeyError, TypeError):
             return self._send(400, {"error": "Kërkesë e pavlefshme."})
