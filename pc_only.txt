@@ -1,0 +1,10 @@
+# Shops that refuse the server's data-centre address (403 bot check or a 202 waiting page, tested 2026-10-24)
+# but answer a home connection. We never work around a refusal: the PC collects these when it's on
+# (nightly.py --pc-only) and sends them to the server. If the PC is off for 3 days, their prices stop showing.
+balkansport.com.al
+sibellebeauty.al
+supermart.al
+www.lcwaikiki.al
+farma-city.al
+mybaby.al
+www.orientaldream.al

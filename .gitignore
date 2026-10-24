@@ -11,3 +11,5 @@ probe*.json
 woo_rescrape.txt
 outreach/
 dist/
+# the PC's copy of the server's price-history backup
+backup/

@@ -28,6 +28,8 @@ def main():
     ap.add_argument("--only", help="category to refresh")
     ap.add_argument("--workers", type=int, default=4, help="shops collected at the same time")
     ap.add_argument("--skip", nargs="*", default=[], help="shops another job is already collecting")
+    ap.add_argument("--only-shops", nargs="*", help="collect just these shops (the PC's part: pc_only.txt)")
+    ap.add_argument("--no-match", action="store_true", help="don't rebuild matches/report afterwards")
     a = ap.parse_args()
     con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
     sql = "SELECT domain, category, platform FROM shops WHERE status IN ('ok', 'error')"
@@ -40,8 +42,9 @@ def main():
     print(f"{datetime.now():%Y-%m-%d %H:%M} refreshing {len(shops)} shops, retrying {len(slow)} that said 429", flush=True)
     # Different shops in parallel, each in its own process (biggest first, so the long ones don't finish last).
     # Politeness is per shop and unchanged: one request at a time, robots.txt and Crawl-delay obeyed.
-    queue, running = [x for x in shops if x[0] not in a.skip], {}
-    retry, retrying = [x for x in slow if x[0] not in a.skip], set()
+    keep = (lambda d: d in a.only_shops) if a.only_shops is not None else (lambda d: d not in a.skip)
+    queue, running = [x for x in shops if keep(x[0])], {}
+    retry, retrying = [x for x in slow if keep(x[0])], set()
     while queue or retry or running:
         # the 429 shops: never more than one at a time, so we never come back as a burst
         if retry and not retrying & set(running):
@@ -61,7 +64,7 @@ def main():
                 if proc.returncode:
                     print(f"{domain}: exited with {proc.returncode}", flush=True)
                 del running[domain]
-    for step in ("match.py", "make_report.py"):
+    for step in () if a.no_match else ("match.py", "make_report.py"):
         subprocess.run([sys.executable, str(HERE / step)], check=False)
     print(f"done in {(time.time() - t0) / 3600:.1f} h", flush=True)
 
