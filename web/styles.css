@@ -230,6 +230,11 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .story { font-size: 19px; line-height: 1.45; margin: 0 0 20px; max-width: 36em; }
 .story .num { background: var(--violet-tint); color: var(--violet-deep); padding: 0 6px; border-radius: 6px; }
 .diff { font: 600 15px var(--display); color: var(--muted); white-space: nowrap; }
+.hist { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.hist.down { color: #2F7D32; }
+.hist.up { color: #B4441F; }
+.hist.warn { color: #B4441F; font-weight: 600; white-space: normal; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hist.down { color: #8BD88F; } :root:not([data-theme="light"]) .hist.up, :root:not([data-theme="light"]) .hist.warn { color: #FF9A73; } }
 .diff.best { color: #14121F; background: var(--lime); padding: 3px 9px; border-radius: 999px; }
 
 /* cookie consent */

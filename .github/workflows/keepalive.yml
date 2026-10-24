@@ -1,14 +1,22 @@
 # Keeps shporta.app awake. Render's free plan stops the server after 15 minutes without visits, and the next
 # visitor then waits 30-60 seconds while it starts. One server running all month (~744 h) fits in the free 750 h.
-# GitHub may run scheduled jobs a few minutes late, hence every 5 minutes.
+# GitHub starts scheduled jobs late and rarely (every ~30 min, measured 2026-10-24, though asked for every 5), so
+# each run pings every 5 minutes for 30 minutes itself; a newer run replaces a still-running one.
 name: keep awake
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 40
     steps:
-      - run: curl -fsS --max-time 90 --retry 2 https://shporta.app/api/health
+      - run: |
+          for i in 1 2 3 4 5 6 7; do
+            curl -sS -o /dev/null -w "%{http_code} %{time_total}s\n" --max-time 90 https://shporta.app/api/health || true
+            [ "$i" = 7 ] || sleep 300
+          done

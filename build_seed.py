@@ -20,6 +20,7 @@ import re
 import shutil
 import sqlite3
 import unicodedata
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import dupes
@@ -28,6 +29,7 @@ from match import parse, size_label
 HERE = Path(__file__).parent
 SRC = HERE / "data" / "phia.db"
 OUT = HERE / "seed" / "phia-api.db"
+STALE_DAYS = 3  # an offer not seen for this long (relative to the newest data) is not shown
 
 from categories import CATEGORIES, classify, fold  # noqa: E402  (categories.py explains the rules)
 
@@ -40,6 +42,41 @@ def page_key(url):
     return u.removeprefix("www.") or None
 
 
+def price_history(src, today):
+    """Per product, from the daily `prices` rows: what the product page needs to say whether a price is really low.
+
+    since    first day we saw a price for it
+    low30    lowest price in the last 30 days (what EU rules compare a "sale" with)
+    prev     the price before the latest change, changed = the day it changed (None: never changed)
+    reg_seen 1 if the shop's current "was" price was actually charged at some point in the last 30 days
+    """
+    start = (date.fromisoformat(today) - timedelta(days=30)).isoformat()
+    out, cur, days = {}, None, []
+
+    def flush():
+        if not days:
+            return
+        h = {"since": days[0][0]}
+        recent = [p for d, p, _ in days if d >= start] or [days[-1][1]]
+        h["low30"] = min(recent)
+        for (_, p0, _), (d1, p1, _) in zip(days, days[1:]):
+            if p1 != p0:
+                h["prev"], h["changed"] = p0, d1
+        reg = days[-1][2]
+        if reg and reg > days[-1][1]:
+            h["reg_seen"] = int(any(p >= reg - 0.5 for d, p, _ in days if d >= start))
+        out[cur] = h
+
+    for pid, d, p, reg in src.execute("SELECT product_id, day, price, regular_price FROM prices WHERE price > 0 "
+                                      "ORDER BY product_id, day"):
+        if pid != cur:
+            flush()
+            cur, days = pid, []
+        days.append((d, p, reg))
+    flush()
+    return out
+
+
 def main():
     OUT.parent.mkdir(exist_ok=True)
     OUT.unlink(missing_ok=True)
@@ -49,7 +86,8 @@ def main():
         CREATE TABLE products (id INTEGER PRIMARY KEY, shop TEXT, title TEXT, brand TEXT, url TEXT, image TEXT,
                                price REAL, regular_price REAL, currency TEXT, in_stock INTEGER,
                                name_key TEXT, size_val REAL, size_unit TEXT, cat TEXT, item_id TEXT, page TEXT,
-                               in_compare INTEGER);
+                               in_compare INTEGER, seen TEXT, since TEXT, low30 REAL, prev_price REAL, changed TEXT,
+                               reg_seen INTEGER);
         CREATE TABLE matches (product_id INTEGER PRIMARY KEY, group_id TEXT);
         CREATE TABLE shops (domain TEXT PRIMARY KEY, category TEXT, products INTEGER);
         CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT, image TEXT, cat TEXT, shops INTEGER, in_stock_shops INTEGER,
@@ -64,18 +102,26 @@ def main():
     dst.execute("CREATE TABLE key_alias (key TEXT PRIMARY KEY, canonical TEXT)")
     dst.executemany("INSERT INTO key_alias VALUES (?,?)", alias.items())
 
+    # Only prices we have actually seen lately. A product a shop removed, or one a failed/capped run didn't reach,
+    # keeps its last price in data/phia.db forever; after STALE_DAYS it is no longer shown or compared.
+    latest = src.execute("SELECT MAX(last_seen) FROM products").fetchone()[0]
+    cutoff = (datetime.fromisoformat(latest) - timedelta(days=STALE_DAYS)).isoformat(timespec="seconds")
+    history = price_history(src, latest[:10])
+
     rows = []
-    for pid, shop, title, brand, url, image, price, reg, cur, stock, craw in src.execute(
-            """SELECT id, shop, title, brand, url, image, price, regular_price, currency, in_stock, category_raw
-               FROM products WHERE price > 0"""):
+    for pid, shop, title, brand, url, image, price, reg, cur, stock, craw, seen in src.execute(
+            """SELECT id, shop, title, brand, url, image, price, regular_price, currency, in_stock, category_raw, last_seen
+               FROM products WHERE price > 0 AND last_seen >= ?""", (cutoff,)):
         key, size = parse(title)
         key = alias.get(key, key)  # match.py rule 5: "Mancera Red Tobacco" -> "Mancera Red Tobacco EDP"
         cat = classify(title, craw, shop_cat.get(shop), shop)
         gid = group_of.get(pid)
         # one listing item per matched product, otherwise per product page (Shopify ?variant= rows share a page)
         item = "g" + gid if gid else "p" + hashlib.md5(f"{shop}|{(url or str(pid)).split('?')[0]}".encode()).hexdigest()[:12]
+        h = history.get(pid, {})
         rows.append([pid, shop, title, brand, url, image, price, reg, cur, stock, key,
-                     size[0] if size else None, size[1] if size else None, cat, item, page_key(url), 1])
+                     size[0] if size else None, size[1] if size else None, cat, item, page_key(url), 1,
+                     seen[:10], h.get("since"), h.get("low30"), h.get("prev"), h.get("changed"), h.get("reg_seen")])
 
     # items: aggregate offers
     by_item = collections.defaultdict(list)
@@ -109,8 +155,9 @@ def main():
         per_shop_min = {}
         for o in live:
             per_shop_min[o[1]] = min(per_shop_min.get(o[1], o[6]), o[6])
+        # a saving only between shops that have it in stock: "save 60%" on two sold-out offers saves nobody anything
         save = round((max(per_shop_min.values()) - min(per_shop_min.values())) / max(per_shop_min.values()) * 100) \
-            if len(per_shop_min) >= 2 else 0
+            if len(per_shop_min) >= 2 and any(o[9] for o in pool) else 0
         title = min((o[2] for o in main), key=lambda t: (abs(len(t) - 45), t))
         image = next((o[5] for o in offs if o[5]), None)
         search = fold(" ".join({o[2] for o in offs}) + " " + " ".join(o[3] or "" for o in offs[:3]))
@@ -119,13 +166,13 @@ def main():
         items.append((iid, title, image, cat, len(shops), len(live_shops), lo, hi, pool[0][8], save, search[:600], size_note,
                       size, extra_shops))
 
-    dst.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    dst.executemany(f"INSERT INTO products VALUES ({','.join('?' * len(rows[0]))})", rows)
     dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", items)
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())
     dst.executemany("INSERT INTO shops VALUES (?,?,?)",
                     src.execute("SELECT domain, category, products FROM shops WHERE status IN ('ok','error')"))
-    last = src.execute("SELECT MAX(last_seen) FROM products").fetchone()[0]
-    dst.executemany("INSERT INTO meta VALUES (?,?)", [("updated", last or ""),
+    tracked = src.execute("SELECT MIN(day) FROM prices").fetchone()[0]
+    dst.executemany("INSERT INTO meta VALUES (?,?)", [("updated", latest or ""), ("tracked_since", tracked or ""),
                                                       ("categories", repr([(c, label) for c, label, _ in CATEGORIES]))])
     dst.executescript("""
         CREATE INDEX products_key ON products(name_key);

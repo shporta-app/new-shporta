@@ -16,6 +16,7 @@ import ast
 import collections
 import gzip
 import json
+import math
 import mimetypes
 import os
 import re
@@ -36,7 +37,7 @@ mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
 WEB = HERE / "web"
 PORT = int(os.environ.get("PORT", 8787))
-DB_FILE = HERE / "seed" / "phia-api.db"
+DB_FILE = Path(os.environ["PHIA_DB"]) if os.environ.get("PHIA_DB") else HERE / "seed" / "phia-api.db"  # PHIA_DB: test a new build locally
 PAGE_SIZE = 30
 
 
@@ -67,6 +68,11 @@ def meta(key):
 CATEGORIES = dict(ast.literal_eval(meta("categories") or "[]"))
 COLS = ("id, shop, title, brand, url, image, price, regular_price, currency, in_stock, name_key, size_val, size_unit, item_id,"
         " in_compare, cat")
+# price history per offer (build_seed.price_history); an older data file without it still works
+HISTORY = ("seen", "since", "low30", "prev_price", "changed", "reg_seen")
+if set(HISTORY) <= {r[1] for r in db().execute("PRAGMA table_info(products)")}:
+    COLS += ", " + ", ".join(HISTORY)
+TRACKED_SINCE = meta("tracked_since")
 
 
 def page_key(url):
@@ -98,7 +104,8 @@ def verdict(price, currency, offers):
         return None
     lo, med = min(peers), statistics.median(peers)
     label = "good" if price <= lo * 1.03 else "high" if price > med * 1.10 else "normal"
-    return {"label": label, "lowest": lo, "median": med, "shops": len(peers), "save": round(price - lo) if price > lo else 0}
+    save = (round(price - lo) if currency == "ALL" else round(price - lo, 2)) if price > lo else 0  # €2.60, not €3
+    return {"label": label, "lowest": lo, "median": med, "shops": len(peers), "save": save}
 
 
 def o_size_num(o):
@@ -109,6 +116,9 @@ def o_size_num(o):
 def public(o):
     out = {k: o[k] for k in ("id", "shop", "title", "brand", "url", "image", "price", "regular_price", "currency", "in_stock")
            if k in o.keys()} | ({"item": o["item_id"]} if "item_id" in o.keys() else {})
+    for k in HISTORY:  # when we last saw this price, and what it was before (product page: "is this low?")
+        if k in o.keys() and o[k] is not None:
+            out[k] = o[k]
     if "size_val" in o.keys():  # what this shop's own listing says; None = not stated (a bare number may be a shade)
         out["size"] = size_label(o["size_val"], o["size_unit"]) if o["size_unit"] else None
     if "size_val" in o.keys() and o["size_val"]:
@@ -116,6 +126,14 @@ def public(o):
     if o["shop"] in SECOND_HAND:
         out["used"] = True  # a used / vintage item: always labelled
     return out
+
+
+def page_num(q):
+    """?page= as a sane number: no negative pages, and no number too big for SQLite (that crashed the request)."""
+    try:
+        return min(max(0, int(q.get("page") or 0)), 10000)
+    except ValueError:
+        return 0
 
 
 def item_rows(sql, args):
@@ -224,7 +242,7 @@ def category(cat, q):
         where.append("id IN (SELECT item_id FROM products WHERE shop = ?)")
         args.append(q["shop"])
     order = SORTS.get(q.get("sort"), SORTS["compared"])
-    page = max(0, int(q.get("page") or 0))
+    page = page_num(q)
     sql = " AND ".join(where)
     total = db().execute(f"SELECT COUNT(*) FROM items WHERE {sql}", args).fetchone()[0]
     items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {sql} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -252,7 +270,7 @@ def originals_of(item_id):
 def dupe_list(q):
     """One row per expensive product: its best dupe. Newest perfume and skincare finds first by price."""
     kind = q.get("kind") if q.get("kind") in ("inspired", "active", "known") else None
-    page = max(0, int(q.get("page") or 0))
+    page = page_num(q)
     # one row per expensive product; for a well-known makeup pair, one row per pair (not one per Dior shade)
     where = ("WHERE x.save_pct = (SELECT MAX(save_pct) FROM dupes y WHERE y.item_id = x.item_id)"
              " AND (x.kind != 'known' OR x.item_id = (SELECT z.item_id FROM dupes z WHERE z.kind = 'known'"
@@ -290,6 +308,7 @@ def item(item_id):
             out.append(o["item_id"])
     it["similar"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(out))})", out) if out else []
     it["category_label"] = CATEGORIES.get(it["cat"], "Të tjera")
+    it["tracked_since"] = TRACKED_SINCE  # the first day of price history: claims about "lowest" only reach back to it
     it["used"] = any(o["shop"] in SECOND_HAND for o in it["offers"])
     for o in it["offers"]:  # a shop that writes only "55" in a 55 g comparison: same number, show it with the unit
         if not o.get("size") and it["size"] and o_size_num(o) == it["size"].split()[0]:
@@ -300,7 +319,7 @@ def item(item_id):
 
 
 def search(q, page=0):
-    words = [w for w in re.findall(r"\w+", fold(q)) if len(w) > 1][:6]
+    words = [w for w in re.findall(r"[^\W_]+", fold(q)) if len(w) > 1][:6]  # no "_": it's a LIKE wildcard
     if not words:
         return {"q": q, "total": 0, "items": []}
     where = " AND ".join("search LIKE ?" for _ in words)
@@ -360,7 +379,7 @@ def lookup(title, price=None, currency="ALL", url=""):
         for o in exact:  # a shop that writes only "55" in a 55 g comparison: same number, show it with the unit
             if not o.get("size") and q.get("size_label") and o_size_num(o) == q["size_label"].split()[0]:
                 o["size"] = q["size_label"]
-        out = {"query": q, "exact": exact, "verdict": verdict(q["price"], currency, offers),
+        out = {"query": q, "exact": exact, "verdict": None if q.get("no_verdict") else verdict(q["price"], currency, offers),
                "item": item_id}
         if item_id:  # shops selling it without stating the size: only counted, the product page lists them
             out["unconfirmed"] = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()[0] or 0
@@ -392,7 +411,13 @@ def lookup(title, price=None, currency="ALL", url=""):
             # several sizes and the page only says "from 880 L": compare the size most shops sell, and say which
             here = max(matched, key=lambda o: db().execute(
                 "SELECT COUNT(DISTINCT shop) FROM products WHERE item_id = ? AND in_compare = 1", (o["item_id"],)).fetchone()[0])
-            q["price"] = here["price"]
+            if not price:
+                q["price"] = here["price"]  # the page shows no price: ours, from the shop's own listing
+            elif len(mine) > 1 and abs(price - here["price"]) > max(1, here["price"] * 0.03):
+                # the page's price fits none of its sizes as we last saw them: which size it is isn't certain,
+                # so list the shops but give no verdict. (One size only: the page's price is the truth, so the
+                # verdict below is on what the shopper sees now, never on our older price.)
+                q["no_verdict"] = True
         else:
             here = min(mine, key=lambda o: abs(o["price"] - price) if price else 0)
         if here["item_id"].startswith("g"):
@@ -409,7 +434,8 @@ def lookup(title, price=None, currency="ALL", url=""):
     words = key.split()
     if not (len(words) >= 3 and any(w not in GENERIC for w in words)):
         return answer([])
-    cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))]
+    cands = [dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE name_key = ?", (key,))
+             if r["shop"] not in SECOND_HAND]  # a used item is never "the same product"
     # who it's for, as match.py: a "(Men)" title never matches a "(Women)" one, and where the name also exists
     # as a separate men's/women's line ("Light Blue" / "Light Blue Pour Homme") the label must be the same
     mine_g = gender_of(title or "")
@@ -435,10 +461,8 @@ def lookup(title, price=None, currency="ALL", url=""):
     if pick:
         q["size_label"], q["size_assumed"] = size_label(*pick) if pick[1] else None, True
         return answer([o for o in sized if same_size(pick, (o["size_val"], o["size_unit"]))])
-    if not options and price:
-        # no shop states a size: the same name at nearly the same price (as match.py's unsized groups)
-        return answer([o for o in cands if price / 1.25 <= o["price"] <= price * 1.25
-                       and not set(words) & {"edp", "edt", "parfum", "perfume", "extrait", "cologne"}])
+    # no size anywhere (or the price doesn't say which): never "the same product" with a verdict. The same name
+    # still shows, in its own block with each shop's size ("dyqani nuk e shkruan madhësinë"), never compared.
     return answer([])
 
 
@@ -582,10 +606,11 @@ def similar(key, price, currency, limit=8):
 
 # ------------------------------------------------------------------ outbound clicks
 
+CLICKS_LOCK = threading.Lock()
 CLICKS = collections.Counter()  # since the last restart; every click is also printed to the log
 
 
-def outbound(pid, item_id, from_page, visitor):
+def outbound(pid, item_id, from_page, visitor, count=True):
     r = db().execute("SELECT shop, url FROM products WHERE id = ?", (pid,)).fetchone()
     if not r or not r["url"]:
         return None
@@ -594,7 +619,10 @@ def outbound(pid, item_id, from_page, visitor):
         return None
     q = [p for p in u.query.split("&") if p and not p.startswith("utm_")]
     q += ["utm_source=shporta", "utm_medium=referral", "utm_campaign=krahasimi"]
-    CLICKS[r["shop"]] += 1
+    if not count:
+        return u._replace(query="&".join(q)).geturl()
+    with CLICKS_LOCK:
+        CLICKS[r["shop"]] += 1
     print(json.dumps({"click": r["shop"], "product": pid, "item": item_id, "from": from_page, "visitor": visitor,
                       "at": __import__("datetime").datetime.utcnow().isoformat(timespec="seconds")}), flush=True)
     return u._replace(query="&".join(q)).geturl()
@@ -603,6 +631,8 @@ def outbound(pid, item_id, from_page, visitor):
 # ------------------------------------------------------------------ HTTP
 
 class Handler(BaseHTTPRequestHandler):
+    timeout = 15  # a client that stops sending (or sends a wrong Content-Length) can't hold a thread forever
+
     def _send(self, code, body, ctype="application/json; charset=utf-8", cache=None):
         if not isinstance(body, bytes):
             body = json.dumps(body, ensure_ascii=False).encode()
@@ -639,7 +669,7 @@ class Handler(BaseHTTPRequestHandler):
                 res = item(path.rsplit("/", 1)[1])
                 return self._send(200 if res else 404, res or {"error": "Ky produkt nuk u gjet."})
             if path == "/api/search":
-                return self._send(200, search(q.get("q", ""), max(0, int(q.get("page") or 0))))
+                return self._send(200, search(q.get("q", ""), page_num(q)))
             if path == "/api/dupes":
                 return self._send(200, dupe_list(q), cache="public, max-age=600")
             if path == "/api/shops":
@@ -647,7 +677,11 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/go/"):
                 cookies = dict(c.strip().split("=", 1) for c in (self.headers.get("Cookie") or "").split(";") if "=" in c)
                 visitor = cookies.get("sp_id") if cookies.get("sp_consent") == "all" else None
-                dest = outbound(int(path.rsplit("/", 1)[1]), q.get("i", "")[:20], q.get("f", "")[:20], visitor)
+                pid = path.rsplit("/", 1)[1]
+                if not pid.isdigit() or len(pid) > 12:
+                    return self._send(404, {"error": "Ky link nuk ekziston më."})
+                # HEAD is a link checker or prefetch, not a shopper: never counted as a click
+                dest = outbound(int(pid), q.get("i", "")[:20], q.get("f", "")[:20], visitor, count=self.command == "GET")
                 if not dest:
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 self.send_response(302)
@@ -658,8 +692,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/clicks" and os.environ.get("ADMIN_TOKEN") and q.get("token") == os.environ["ADMIN_TOKEN"]:
                 return self._send(200, dict(CLICKS.most_common()))
-        except (ValueError, sqlite3.Error) as e:
-            return self._send(400, {"error": str(e)})
+        except (ValueError, sqlite3.Error):
+            return self._send(400, {"error": "Kërkesë e pavlefshme."})
+        except Exception as e:  # never drop the connection without an answer
+            print(json.dumps({"error": f"{type(e).__name__}: {e}", "path": path[:200]}), flush=True)
+            return self._send(500, {"error": "Diçka shkoi keq. Provo përsëri."})
         # static files; anything else is a page of the single-page app
         f = (WEB / path.lstrip("/")).resolve()
         if path != "/" and f.is_file() and WEB.resolve() in f.parents:
@@ -675,12 +712,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(min(n, 20000)) or b"{}")
+            if not 0 <= n <= 20000:
+                return self._send(413, {"error": "Kërkesë shumë e madhe."})
+            data = json.loads(self.rfile.read(n) or b"{}")
+            if not isinstance(data, dict):
+                raise ValueError("expected an object")
             price = float(data["price"]) if data.get("price") not in (None, "") else None
+            if price is not None and not (math.isfinite(price) and price > 0):
+                price = None  # "nan", "inf", 0 or negative: as if the page showed no price
             cur = str(data.get("currency") or "ALL")[:3].upper()
             return self._send(200, lookup(str(data.get("title", ""))[:300], price, cur, str(data.get("url", ""))[:500]))
-        except (ValueError, KeyError, TypeError) as e:
-            return self._send(400, {"error": str(e)})
+        except (ValueError, KeyError, TypeError):
+            return self._send(400, {"error": "Kërkesë e pavlefshme."})
+        except Exception as e:
+            print(json.dumps({"error": f"{type(e).__name__}: {e}", "path": "/api/lookup"}), flush=True)
+            return self._send(500, {"error": "Diçka shkoi keq. Provo përsëri."})
 
     def log_message(self, *a):
         pass

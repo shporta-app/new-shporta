@@ -70,11 +70,12 @@
     const p = fromJsonLd() || fromMeta() || fromPage();
     if (!p) return null;
     p.currency = CUR[String(p.currency).trim().toUpperCase()] || String(p.currency).toUpperCase();
-    p.url = location.href;
+    p.url = location.origin + location.pathname;  // never the query or #part: they can carry tracking or session ids
     return p;
   }
 
-  const fmt = (n, c) => (c === "EUR" ? "€" + Number(n).toFixed(2) : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L");
+  const fmt = (n, c) => (c === "EUR" ? "€" + Number(n).toFixed(2) : c === "USD" ? "$" + Number(n).toFixed(2)
+    : c && c !== "ALL" ? Number(n).toFixed(2) + " " + c : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L");
   const host = (d) => String(d || "").replace(/^www\./, "");
   const LABEL = { good: ["Çmim i mirë", "#1f7a4d"], normal: ["Çmim normal", "#7a6a1f"], high: ["Çmim i lartë", "#b3261e"] };
 

@@ -3,7 +3,31 @@ const main = document.getElementById("main");
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const lek = (n, cur = "ALL") =>
-  cur === "EUR" ? "€" + Number(n).toFixed(2) : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L";
+  cur === "EUR" ? "€" + Number(n).toFixed(2) : cur === "USD" ? "$" + Number(n).toFixed(2)
+  : cur && cur !== "ALL" ? Number(n).toFixed(2) + " " + cur  // never show a foreign price as lek
+  : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L";
+const day = (d) => new Date(d + "T12:00:00").toLocaleDateString("sq-AL", { day: "numeric", month: "short" });
+const daysAgo = (d) => Math.round((Date.now() - new Date(d + "T12:00:00")) / 864e5);
+
+// What the price history says about one shop's price (build_seed.price_history). Only facts we saw ourselves:
+// a "was" price is called false only after 30 days of daily prices in which the shop never charged it.
+function priceNote(o) {
+  const out = [];
+  if (o.prev_price && o.changed && o.prev_price !== o.price) {
+    out.push(o.prev_price > o.price
+      ? `<span class="hist down">ra nga ${lek(o.prev_price, o.currency)} më ${day(o.changed)}</span>`
+      : `<span class="hist up">u rrit nga ${lek(o.prev_price, o.currency)} më ${day(o.changed)}</span>`);
+  }
+  if (o.regular_price > o.price && o.since) {
+    if (daysAgo(o.since) >= 30 && o.reg_seen === 0) {
+      out.push(`<span class="hist warn">zbritje e dyshimtë: në 30 ditët e fundit nuk e pamë kurrë me ${lek(o.regular_price, o.currency)}</span>`);
+    } else if (o.low30 && o.low30 < o.price) {
+      out.push(`<span class="hist">më i ulët në 30 ditë: ${lek(o.low30, o.currency)}</span>`);
+    }
+  }
+  if (o.seen && daysAgo(o.seen) >= 1) out.push(`<span class="hist">çmimi i parë më ${day(o.seen)}</span>`);
+  return out.length ? `<br>${out.join("<br>")}` : "";
+}
 const shopName = (d) => String(d || "").replace(/^www\./, "");
 const plural = (n, one, many) => `${n.toLocaleString("en").replace(/,/g, " ")} ${n === 1 ? one : many}`;
 const img = (src, alt = "") =>
@@ -50,7 +74,7 @@ function ruler(item, { heading = "h3", animate = false, linkHead = true, showHea
 }
 
 function tile(it) {
-  const range = it.shops > 1 && it.max_price > it.min_price
+  const range = it.in_stock_shops > 1 && it.save_pct > 0 && it.max_price > it.min_price  // sold out everywhere saves nothing
     ? `<small>kursen deri ${lek(it.max_price - it.min_price, it.currency)}</small>` : "";
   return `<a class="tile" href="/produkt/${esc(it.id)}" data-link>
     <span class="pic">${img(it.image, it.title)}</span>
@@ -251,7 +275,7 @@ async function pageItem(id) {
     : o.price === lo ? `<span class="diff best">Më i liri</span>` : `<span class="diff">+${lek(o.price - lo, o.currency)}</span>`;
   const rows = it.offers.map((o) => `<tr class="${o.in_stock ? "" : "out"}">
       <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
-      <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}</td>
+      <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}${priceNote(o)}</td>
       <td>${o.in_stock ? diffCell(o) : "S'ka gjendje"}</td>
       <td>${shopLink(o, it.id, "produkt", `btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}`)}</td>
     </tr>`).join("");
@@ -274,8 +298,9 @@ async function pageItem(id) {
         ${it.used ? `<p class="size-warn">Artikull i përdorur (second-hand / vintage). Nuk e krahasojmë me produkte të reja.</p>` : ""}
         ${it.size ? `<p class="size-line">Krahasojmë vetëm madhësinë <b>${esc(it.size)}</b>. Çdo dyqan më poshtë e shkruan këtë madhësi te produkti.</p>` : ""}
         <div class="summary">
-          <div class="low">Më i liri<b>${lek(lo, it.currency)}</b></div>
-          ${multiShop && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
+          ${live.length ? `<div class="low">Më i liri<b>${lek(lo, it.currency)}</b></div>`
+            : `<div>S'ka gjendje askund<b>${lek(lo, it.currency)}</b></div>`}
+          ${live.length > 1 && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
           <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
         </div>
         ${story}
@@ -289,7 +314,8 @@ async function pageItem(id) {
           <table class="offers unconfirmed"><tbody>${unconfirmed}</tbody></table>` : ""}
         <p class="note">${multiShop
           ? "Krahasojmë vetëm të njëjtin produkt: i njëjti emër, e njëjta markë dhe e njëjta madhësi. Emri i saktë te çdo dyqan është poshtë çmimit, që ta kontrollosh vetë."
-          : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}</p>
+          : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}
+          ${it.tracked_since ? ` Çmimet i kontrollojmë çdo ditë që nga ${new Date(it.tracked_since + "T12:00:00").toLocaleDateString("sq-AL", { day: "numeric", month: "long", year: "numeric" })}.` : ""}</p>
       </div>
     </div>
     ${it.dupes && it.dupes.length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2>
@@ -452,7 +478,7 @@ function pageExtension() {
 // heading, else the tab title; /ndaj strips the "| Shop" part) and the page address, which identifies pages we know.
 const BOOKMARKLET = "javascript:(()=>{const m=document.querySelector('meta[property=&quot;og:title&quot;]'),h=document.querySelector('h1'),"
   + "t=((m&&m.content)||(h&&h.innerText)||document.title).trim().slice(0,200);"
-  + "window.open('https://shporta.app/ndaj?url='+encodeURIComponent(location.href.split('#')[0])+'&amp;title='+encodeURIComponent(t))})()";
+  + "window.open('https://shporta.app/ndaj?url='+encodeURIComponent(location.origin+location.pathname)+'&amp;title='+encodeURIComponent(t))})()";
 
 function pagePrivacy() {
   document.title = "Cookies dhe privatësia | shporta";
