@@ -4,7 +4,9 @@
     python refresh.py --only beauty   # one category
     python refresh.py --workers 2     # fewer at once (each shop still gets one request at a time, at its own pace)
 
-Blocked shops are never retried here (they said no). Run it once a day: each run adds a row per product to the
+Shops that refused us (robots.txt, 403, a bot challenge) are never retried: they said no. Shops that only said
+"429 too many requests" are asked again once per run, one such shop at a time, at their Crawl-delay; the first 429
+stops that shop again until the next run (scrape.py never works around it). Run it once a day: each run adds a row per product to the
 `prices` table, which is the price history the "is this discount real?" check needs.
 """
 import argparse
@@ -30,15 +32,22 @@ def main():
     con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
     sql = "SELECT domain, category, platform FROM shops WHERE status IN ('ok', 'error')"
     shops = con.execute(sql + (" AND category = ?" if a.only else "") + " ORDER BY products DESC", (a.only,) if a.only else ()).fetchall()
+    slow = con.execute("SELECT domain, category, platform FROM shops WHERE status = 'blocked' AND note LIKE '429 %'"
+                       + (" AND category = ?" if a.only else "") + " ORDER BY products DESC", (a.only,) if a.only else ()).fetchall()
     con.close()
 
     t0 = time.time()
-    print(f"{datetime.now():%Y-%m-%d %H:%M} refreshing {len(shops)} shops", flush=True)
+    print(f"{datetime.now():%Y-%m-%d %H:%M} refreshing {len(shops)} shops, retrying {len(slow)} that said 429", flush=True)
     # Different shops in parallel, each in its own process (biggest first, so the long ones don't finish last).
     # Politeness is per shop and unchanged: one request at a time, robots.txt and Crawl-delay obeyed.
     queue, running = [x for x in shops if x[0] not in a.skip], {}
-    while queue or running:
-        while queue and len(running) < a.workers:
+    retry, retrying = [x for x in slow if x[0] not in a.skip], set()
+    while queue or retry or running:
+        # the 429 shops: never more than one at a time, so we never come back as a burst
+        if retry and not retrying & set(running):
+            retrying.add(retry[0][0])
+            queue.insert(0, retry.pop(0))
+        while queue and len(running) < a.workers + (1 if retrying & {queue[0][0]} else 0):
             domain, category, platform = queue.pop(0)
             # custom adapters are picked up by domain; pass the platform only for the built-in ones
             cmd = [sys.executable, str(HERE / "scrape.py"), domain, "--category", category,
