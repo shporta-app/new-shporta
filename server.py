@@ -77,6 +77,7 @@ HISTORY = ("seen", "since", "low30", "prev_price", "changed", "reg_seen")
 if set(HISTORY) <= {r[1] for r in db().execute("PRAGMA table_info(products)")}:
     COLS += ", " + ", ".join(HISTORY)
 TRACKED_SINCE = meta("tracked_since")
+HAS_ITEM_SEARCH = bool(db().execute("SELECT 1 FROM sqlite_master WHERE name = 'item_search'").fetchone())
 
 
 def page_key(url):
@@ -328,6 +329,10 @@ def search(q, page=0):
         return {"q": q, "total": 0, "items": []}
     where = " AND ".join("search LIKE ?" for _ in words)
     args = [f"%{w}%" for w in words]
+    long = [w for w in words if len(w) >= 3]  # the trigram index narrows the items, the LIKEs above stay the rule
+    if long and HAS_ITEM_SEARCH:
+        where = f"rowid IN (SELECT rowid FROM item_search WHERE {' AND '.join('search LIKE ?' for _ in long)}) AND {where}"
+        args = [f"%{w}%" for w in long] + args
     total = db().execute(f"SELECT COUNT(*) FROM items WHERE {where}", args).fetchone()[0]
     items = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE {where}
                           ORDER BY shops DESC, in_stock_shops DESC, min_price LIMIT ? OFFSET ?""",

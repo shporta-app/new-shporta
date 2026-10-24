@@ -182,6 +182,9 @@ def main():
         CREATE INDEX items_cat ON items(cat, shops DESC, save_pct DESC);
         CREATE INDEX items_deals ON items(save_pct DESC) WHERE shops >= 2;
         INSERT INTO words(words) VALUES('rebuild');
+        -- any 3+ letters inside a name, found without reading all items (server.search); about 16 MB
+        CREATE VIRTUAL TABLE item_search USING fts5(search, content='items', tokenize='trigram', detail='none');
+        INSERT INTO item_search(item_search) VALUES('rebuild');
     """)
     dst.commit()
     n_pairs, n_orig, kinds = dupes.build(dst)  # cheaper alternatives to expensive products (dupes.py)
