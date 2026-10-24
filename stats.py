@@ -50,8 +50,10 @@ def bot_name(ua):
     return "other bot" if not ua or GENERIC_BOT.search(ua) else None
 
 
-def record(kind, ip, ua, referer="", host="shporta.app"):
-    """kind: page | product | category | search | lookup | click. Never blocks a request."""
+def record(kind, ip, ua, referer="", host="shporta.app", shop=None, src=None):
+    """kind: page | product | category | search | lookup | click. Never blocks a request.
+    A click also keeps which shop it went to and from which part of shporta (product page, home, report, extension):
+    that's what we can show a shop about the visitors we send it."""
     try:
         today = date.today().isoformat()
         bot = bot_name(ua)
@@ -59,7 +61,7 @@ def record(kind, ip, ua, referer="", host="shporta.app"):
         if ref in ("", host, "shporta.app"):
             ref = ""
         visitor = None if bot else hashlib.sha256(f"{_daily_salt(today)}|{ip}|{ua}".encode()).hexdigest()[:16]
-        _q.put_nowait((today, kind, ref, visitor, bot))
+        _q.put_nowait((today, kind, ref, visitor, bot, shop, (src or "")[:20] or None))
     except Exception:
         pass
 
@@ -76,7 +78,11 @@ def _writer():
                 con = sqlite3.connect(DB)
                 con.execute("CREATE TABLE IF NOT EXISTS hits (day TEXT, kind TEXT, ref TEXT, visitor TEXT, bot TEXT)")
                 con.execute("CREATE INDEX IF NOT EXISTS hits_day ON hits(day)")
-            con.executemany("INSERT INTO hits VALUES (?,?,?,?,?)", rows)
+                have = {r[1] for r in con.execute("PRAGMA table_info(hits)")}
+                for col in ("shop", "src"):  # a database from before clicks were kept per shop
+                    if col not in have:
+                        con.execute(f"ALTER TABLE hits ADD COLUMN {col} TEXT")
+            con.executemany("INSERT INTO hits (day, kind, ref, visitor, bot, shop, src) VALUES (?,?,?,?,?,?,?)", rows)
             con.commit()
         except Exception as e:
             print(f"stats: {e}", flush=True)
@@ -102,5 +108,10 @@ def summary(days=30):
                           GROUP BY ref ORDER BY 2 DESC LIMIT 25""", (since,)).fetchall()
     bots = con.execute("""SELECT bot, COUNT(*), MAX(day) FROM hits WHERE day >= ? AND bot IS NOT NULL
                           GROUP BY bot ORDER BY 2 DESC""", (since,)).fetchall()
+    shops = []
+    if "shop" in {r[1] for r in con.execute("PRAGMA table_info(hits)")}:
+        shops = con.execute("""SELECT shop, COUNT(*), COUNT(DISTINCT visitor || day), group_concat(DISTINCT src) FROM hits
+                               WHERE day >= ? AND kind = 'click' AND bot IS NULL AND shop IS NOT NULL
+                               GROUP BY shop ORDER BY 2 DESC""", (since,)).fetchall()
     con.close()
-    return {"days": list(per_day.values()), "referrers": refs, "crawlers": bots}
+    return {"days": list(per_day.values()), "referrers": refs, "crawlers": bots, "shops": shops}

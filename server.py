@@ -763,12 +763,12 @@ def outbound(pid, item_id, from_page, visitor, count=True):
     q = [p for p in u.query.split("&") if p and not p.startswith("utm_")]
     q += ["utm_source=shporta", "utm_medium=referral", "utm_campaign=krahasimi"]
     if not count:
-        return u._replace(query="&".join(q)).geturl()
+        return u._replace(query="&".join(q)).geturl(), r["shop"]
     with CLICKS_LOCK:
         CLICKS[r["shop"]] += 1
     print(json.dumps({"click": r["shop"], "product": pid, "item": item_id, "from": from_page, "visitor": visitor,
                       "at": __import__("datetime").datetime.utcnow().isoformat(timespec="seconds")}), flush=True)
-    return u._replace(query="&".join(q)).geturl()
+    return u._replace(query="&".join(q)).geturl(), r["shop"]
 
 
 def stats_page(data):
@@ -780,12 +780,16 @@ def stats_page(data):
     rows = "".join("<tr><td>" + e(d["day"]) + "".join(f"<td>{d.get(k, 0)}" for k in kinds) for d in reversed(data["days"]))
     refs = "".join(f"<tr><td>{e(r)}<td>{n}" for r, n in data.get("referrers", []))
     bots = "".join(f"<tr><td>{e(b)}<td>{n}<td>{e(last)}" for b, n, last in data.get("crawlers", []))
+    shops = "".join(f"<tr><td>{e(s.removeprefix('www.'))}<td>{n}<td>{v}<td>{e((src or '').replace(',', ', '))}"
+                    for s, n, v, src in data.get("shops", []))
     return f"""<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Statistika | shporta</title>
 <style>body{{font:15px system-ui;margin:24px;max-width:960px}}table{{border-collapse:collapse;margin:8px 0 28px}}
 td,th{{border-bottom:1px solid #ddd;padding:5px 10px;text-align:right}}td:first-child,th:first-child{{text-align:left}}</style>
 <h1>Statistika e shportës (30 ditët e fundit)</h1>
 <p>Pa cookies dhe pa ruajtur adresa: një vizitor numërohet një herë në ditë. Robotët e kërkimit dhe të AI-së numërohen veçmas.</p>
 <table><tr><th>Dita{"".join(f"<th>{names[k]}" for k in kinds)}{rows}</table>
+<h2>Klikime te çdo dyqan</h2><p>Kjo është prova që u tregojmë dyqaneve: sa vizitorë u dërgojmë (çdo link ka utm_source=shporta).</p>
+<table><tr><th>Dyqani<th>Klikime<th>Vizitorë<th>Nga faqja{shops or "<tr><td>Ende asnjë"}</table>
 <h2>Nga erdhën vizitorët</h2><table><tr><th>Faqja<th>Vizita{refs or "<tr><td>Ende asnjë"}</table>
 <h2>Robotët e kërkimit dhe AI që lexojnë shportën</h2><table><tr><th>Roboti<th>Kërkesa<th>Hera e fundit{bots or "<tr><td>Ende asnjë"}</table>"""
 
@@ -817,10 +821,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(204, b"")
 
-    def count(self, kind):
+    def count(self, kind, shop=None, src=None):
         # behind Caddy the visitor's address is in X-Forwarded-For; stats.py never stores it, only a daily hash
         ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
-        stats.record(kind, ip, self.headers.get("User-Agent", ""), self.headers.get("Referer", ""))
+        stats.record(kind, ip, self.headers.get("User-Agent", ""), self.headers.get("Referer", ""), shop=shop, src=src)
 
     def admin(self, q):
         token = os.environ.get("ADMIN_TOKEN")
@@ -876,9 +880,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not pid.isdigit() or len(pid) > 12:
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 # HEAD is a link checker or prefetch, not a shopper: never counted as a click
-                dest = outbound(int(pid), q.get("i", "")[:20], q.get("f", "")[:20], visitor, count=self.command == "GET")
+                dest, shop = outbound(int(pid), q.get("i", "")[:20], q.get("f", "")[:20], visitor,
+                                      count=self.command == "GET") or (None, None)
                 if dest and self.command == "GET":
-                    self.count("click")
+                    self.count("click", shop=shop, src=q.get("f", ""))
                 if not dest:
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 self.send_response(302)
