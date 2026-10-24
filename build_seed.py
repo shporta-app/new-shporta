@@ -16,6 +16,7 @@ The full data/phia.db (price history, raw data) stays on the machine that scrape
 import collections
 import gzip
 import hashlib
+import os
 import re
 import shutil
 import sqlite3
@@ -159,6 +160,18 @@ def main():
         save = round((max(per_shop_min.values()) - min(per_shop_min.values())) / max(per_shop_min.values()) * 100) \
             if len(per_shop_min) >= 2 and any(o[9] for o in pool) else 0
         title = min((o[2] for o in main), key=lambda t: (abs(len(t) - 45), t))
+        # one shop's page selling several sizes ("- Masa: 75 ML", "- Masa: 125 ML"): no single size label, and the
+        # name without any one size, else the tile shows one size's name next to another size's label
+        if not iid.startswith("g") and len({(o[11], o[12]) for o in sized}) > 1:
+            size = None
+            names = [o[2] for o in main]
+            base = os.path.commonprefix(names)
+            if base and base[-1].isalnum() and any(len(t) > len(base) and t[len(base)].isalnum() for t in names):
+                base = re.sub(r"\S+$", "", base)  # never cut inside a word or number ("12 pcs" / "1 pcs" -> not "1")
+            base = base.rstrip(" -–:*,(/")
+            base = re.sub(r"\s*[-–:]\s*(masa|madhesia|madhësia|sasia|vellimi|vëllimi|format|size)$", "", base, flags=re.I)
+            if len(base) >= 8:
+                title = base
         image = next((o[5] for o in offs if o[5]), None)
         search = fold(" ".join({o[2] for o in offs}) + " " + " ".join(o[3] or "" for o in offs[:3]))
         # 0: every shop states the size, 1: some don't, 2: none do (shown as a warning on the product page)
