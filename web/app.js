@@ -345,6 +345,12 @@ async function pageItem(id) {
         ${story}
         <p class="watch"><button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
           <small>Ruhet vetëm në këtë shfletues. Kur rihap shportën, të tregojmë nëse çmimi ra.</small></p>
+        ${it.alerts ? `<form class="alert-form" id="alert-form">
+          <label for="alert-email">Më njofto me email kur bie çmimi</label>
+          <span><input id="alert-email" name="email" type="email" autocomplete="email" required placeholder="emaili yt">
+          <button class="btn" type="submit">Më njofto</button></span>
+          <small id="alert-msg" role="status">Të shkruajmë vetëm kur bie çmimi. Çdo email ka një link për t’i ndaluar.</small>
+        </form>` : ""}
         ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
         <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
@@ -374,6 +380,21 @@ async function pageItem(id) {
   const label = () => { btn.textContent = watching(it.id) ? "E ndjek ✓ (hiqe)" : "Ndiq çmimin"; btn.setAttribute("aria-pressed", watching(it.id)); };
   label();
   btn.onclick = () => { watchToggle(it); watchNow = null; label(); };
+  const form = document.getElementById("alert-form");
+  if (form) form.onsubmit = async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("alert-msg"), b = form.querySelector("button");
+    b.disabled = true;
+    try {
+      const r = await fetch("/api/alert", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email.value, item: it.id }) });
+      const d = await r.json().catch(() => ({}));
+      msg.textContent = d.message || d.error || "Diçka shkoi keq. Provo përsëri.";
+      msg.className = r.ok ? "ok" : "err";
+      if (r.ok && !watching(it.id)) { watchToggle(it); label(); }
+    } catch { msg.textContent = "Nuk u lidhëm dot. Provo përsëri."; msg.className = "err"; }
+    b.disabled = false;
+  };
 }
 
 async function pageList() {
@@ -633,6 +654,10 @@ function pagePrivacy() {
     <h2>Produktet që ndjek</h2>
     <p>Kur shtyp "Ndiq çmimin", produkti dhe çmimi i asaj dite ruhen vetëm në këtë shfletues (localStorage), jo te ne.
       Kur hap listën, shfletuesi na kërkon vetëm çmimet e sotme për ato produkte. Për ta fshirë, hiqi nga lista ose fshi të dhënat e faqes.</p>
+    <h2>Njoftimet me email</h2>
+    <p>Nëse kërkon njoftim kur bie çmimi, ruajmë vetëm emailin, produktin dhe çmimin. Të shkruajmë vetëm pasi ta konfirmosh me linkun që të dërgojmë,
+      dhe vetëm kur çmimi bie. Emailet i dërgon për ne shërbimi Resend. Adresën nuk e ndajmë dhe nuk e shesim me askënd; një kërkesë e pakonfirmuar
+      fshihet pas 7 ditësh, dhe çdo email ka një link që i ndalon njoftimet dhe e fshin adresën.</p>
     <h2>Kur kalon te një dyqan</h2>
     <p>Lidhjet "Hape në dyqan" kalojnë nga <code>shporta.app/go/…</code>. Ruajmë cilin produkt dhe cilin dyqan zgjodhe dhe kur. Lidhjes i shtojmë
       <code>utm_source=shporta</code>, që dyqani ta dijë se vizita erdhi nga shporta. Kjo mund të na lejojë në të ardhmen të marrim një komision nga dyqani
@@ -700,6 +725,8 @@ async function route() {
   document.querySelectorAll(".top-nav a").forEach((a) => {
     if (pathname.startsWith(a.getAttribute("href"))) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
+  // the links in our emails open pages the server writes in full: nothing to add to them
+  if (pathname.startsWith("/njoftim/") && main.hasAttribute("data-ssr")) return;
   // the first page already came from the server (seo.py): keep it on screen until the full one is ready
   if (main.hasAttribute("data-ssr")) main.removeAttribute("data-ssr");
   else main.innerHTML = `<div class="wrap loading">Duke ngarkuar…</div>`;

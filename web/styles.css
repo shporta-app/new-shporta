@@ -258,6 +258,14 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .watch { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 20px; }
 .watch small { color: var(--muted); font-size: 14px; max-width: 30em; }
 #watch[aria-pressed="true"] { background: var(--violet-tint); color: var(--violet-deep); border-color: transparent; }
+.alert-form { display: grid; gap: 8px; margin: -6px 0 22px; max-width: 520px; }
+.alert-form label { font-weight: 600; }
+.alert-form span { display: flex; gap: 8px; }
+.alert-form input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 12px 16px; }
+.alert-form input:focus { outline: none; border-color: var(--violet); background: var(--paper); }
+.alert-form small { color: var(--muted); font-size: 14px; }
+.alert-form small.ok { color: #2F7D32; font-weight: 600; }
+.alert-form small.err { color: #B4441F; font-weight: 600; }
 .watchlist { list-style: none; padding: 0; margin: 10px 0 40px; }
 .watchlist li { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .watchlist li > a { display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; flex: 1; text-decoration: none; color: var(--ink); min-width: 0; }

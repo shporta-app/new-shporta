@@ -31,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+import alerts
 import dupes
 import seo
 import stats
@@ -420,6 +421,7 @@ def item(item_id):
             o["size"] = it["size"]
     it["dupes"] = dupes_of(item_id)
     it["dupe_of"] = originals_of(item_id)
+    it["alerts"] = alerts.enabled()  # the product page shows the email form only when emails can go out
     return it
 
 
@@ -438,6 +440,30 @@ def search(q, page=0):
                           ORDER BY shops DESC, in_stock_shops DESC, min_price LIMIT ? OFFSET ?""",
                       args + [PAGE_SIZE, page * PAGE_SIZE])
     return {"q": q, "total": total, "page": page, "page_size": PAGE_SIZE, "items": items}
+
+
+def alert_item(item_id):
+    if not re.fullmatch(r"[\w-]{1,20}", item_id or ""):
+        return None
+    rows = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id = ?", (item_id,))
+    return rows[0] if rows else None
+
+
+def alert_page(path, q):
+    """The pages the links in our emails open: confirm, or stop alerts (one click, no login)."""
+    t = q.get("t", "")
+    if path == "/njoftim/konfirmo":
+        r = alerts.confirm(t)
+        h, p = (("Njoftimi u konfirmua", f"Do të të shkruajmë kur {r['title']} të kushtojë më pak. Çdo email ka një link për t'i ndaluar njoftimet.")
+                if r else ("Ky link nuk vlen më", "Mund ta kërkosh përsëri njoftimin te faqja e produktit."))
+    elif q.get("all") == "1":
+        r = alerts.stop_all(t)
+        h, p = ("Njoftimet u ndalën", f"Nuk do të marrësh më asnjë email nga shporta. Adresa jote u fshi.") if r else                ("Njoftimet janë ndalur tashmë", "Kjo adresë nuk ka asnjë njoftim aktiv.")
+    else:
+        r = alerts.stop(t)
+        h, p = ("Njoftimi u ndal", f"Nuk do të të shkruajmë më për {r['title']}.") if r else                ("Njoftimi është ndalur tashmë", "Ky produkt nuk ka më njoftim aktiv.")
+    return seo.page_html(f"{h} | shporta", p, path, f'<div class="wrap page-head"><h1>{seo.e(h)}</h1><p>{seo.e(p)}</p>'
+                         f'<p><a class="btn" href="/">Kthehu te shporta</a></p></div>', robots="noindex,nofollow")
 
 
 def items_by_ids(ids):
@@ -834,6 +860,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/report":
                 res = report_with_history(q.get("month"))
                 return self._send(200 if res else 404, res or {"error": "Ky raport nuk ekziston."}, cache="public, max-age=600")
+            if path in ("/njoftim/konfirmo", "/njoftim/ndalo"):
+                self.noindex = True
+                return self._send(200, alert_page(path, q).encode(), "text/html; charset=utf-8", cache="no-store")
             if path == "/api/items":
                 return self._send(200, items_by_ids(q.get("ids", "")))
             if path == "/api/dupes":
@@ -907,7 +936,11 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/lookup":
+        path = urlparse(self.path).path
+        if path == "/njoftim/ndalo":  # Gmail's own "unsubscribe" button (List-Unsubscribe-Post): stop every alert
+            alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])
+            return self._send(200, {"ok": True})
+        if path not in ("/api/lookup", "/api/alert"):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -916,6 +949,10 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(n) or b"{}")
             if not isinstance(data, dict):
                 raise ValueError("expected an object")
+            if path == "/api/alert":  # "email me when it gets cheaper" on a product page (alerts.py)
+                ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+                code, msg = alerts.subscribe(str(data.get("email", ""))[:254], str(data.get("item", ""))[:20], ip, alert_item)
+                return self._send(code, {"message": msg} if code == 200 else {"error": msg})
             price = float(data["price"]) if data.get("price") not in (None, "") else None
             if price is not None and not (math.isfinite(price) and price > 0):
                 price = None  # "nan", "inf", 0 or negative: as if the page showed no price

@@ -107,6 +107,11 @@ def server_nightly():
     run(sys.executable, "build_seed.py")
     run("sudo", "/usr/bin/systemctl", "restart", "shporta")
     log("site restarted with the new data")
+    try:  # price-drop emails; a failure here must not stop the backup
+        import alerts
+        alerts.check(HERE / "seed" / "phia-api.db", log)
+    except Exception as e:
+        log(f"alerts failed: {e}")
     backup()
     indexnow()
     log("server nightly done")
