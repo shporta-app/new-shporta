@@ -52,7 +52,8 @@ a:hover { color: var(--violet-deep); }
   .top-in { flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; gap: 10px 16px; }
   .top-search { order: 3; flex-basis: 100%; max-width: none; }
   .top-nav { gap: 14px; font-size: 15px; }
-  .top-nav a:last-child { display: none; }
+  .top-nav a[href="/shtesa"] { display: none; }
+  .top-nav { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 }
 
 /* hero */
@@ -235,6 +236,21 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .hist.up { color: #B4441F; }
 .hist.warn { color: #B4441F; font-weight: 600; white-space: normal; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hist.down { color: #8BD88F; } :root:not([data-theme="light"]) .hist.up, :root:not([data-theme="light"]) .hist.warn { color: #FF9A73; } }
+/* products a visitor follows (app.js pageList): the ones cheaper than when saved come first, marked lime */
+.watch { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 20px; }
+.watch small { color: var(--muted); font-size: 14px; max-width: 30em; }
+#watch[aria-pressed="true"] { background: var(--violet-tint); color: var(--violet-deep); border-color: transparent; }
+.watchlist { list-style: none; padding: 0; margin: 10px 0 40px; }
+.watchlist li { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.watchlist li > a { display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; flex: 1; text-decoration: none; color: var(--ink); min-width: 0; }
+.watchlist img, .watchlist .noimg { width: 56px; height: 56px; object-fit: contain; background: #fff; border-radius: 8px; border: 1px solid var(--line); }
+.watchlist .name { display: block; font-weight: 600; line-height: 1.3; }
+.watchlist .num { display: block; font: 600 17px var(--display); }
+.watchlist .hist { white-space: normal; font-size: 14px; }
+.watchlist li.drop .num { background: var(--lime); color: #14121F; display: inline-block; padding: 0 8px; border-radius: 6px; }
+.watch-strip { padding: 14px 0; background: var(--lime); color: #14121F; }
+.watch-strip p { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.watch-strip a:not(.btn) { color: inherit; }
 .diff.best { color: #14121F; background: var(--lime); padding: 3px 9px; border-radius: 999px; }
 
 /* cookie consent */

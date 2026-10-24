@@ -262,6 +262,8 @@ STATIC = {  # pages app.js draws itself; the server gives them a title, descript
     "/privatesia": ("Cookies dhe privatësia | shporta", "Çfarë ruan shporta dhe pse.", "Cookies dhe privatësia", "index,follow"),
     "/ndaj": ("Krahaso një link | shporta", "Ngjit ose ndaj linkun e një produkti nga një dyqan online dhe shiko ku kushton më lirë.",
               "Krahaso një link", "noindex,follow"),
+    "/lista": ("Produktet që ndjek | shporta", "Produktet që ruajte në këtë shfletues dhe sa ka ndryshuar çmimi që kur i ruajte.",
+               "Produktet që ndjek", "noindex,follow"),
     "/kerko": ("Kërko | shporta", "Kërko një produkt ose markë në dyqanet online shqiptare.", "Kërko", "noindex,follow"),
 }
 
@@ -303,7 +305,7 @@ AI_BOTS = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-Searc
 
 
 def robots_txt():
-    rules = "Allow: /\nDisallow: /go/\nDisallow: /api/\nDisallow: /kerko\nDisallow: /ndaj\n"
+    rules = "Allow: /\nDisallow: /go/\nDisallow: /api/\nDisallow: /kerko\nDisallow: /ndaj\nDisallow: /lista\n"
     named = "".join(f"User-agent: {b}\n" for b in AI_BOTS)
     return (f"# shporta.app: price comparison for Albanian online shops. Search engines and AI assistants are welcome.\n"
             f"User-agent: *\n{rules}\n{named}{rules}\nSitemap: {BASE}/sitemap.xml\n")

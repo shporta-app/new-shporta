@@ -340,6 +340,14 @@ def search(q, page=0):
     return {"q": q, "total": total, "page": page, "page_size": PAGE_SIZE, "items": items}
 
 
+def items_by_ids(ids):
+    """Today's prices for the products a visitor watches (app.js: the list lives only in their browser)."""
+    ids = [i for i in ids.split(",") if re.fullmatch(r"[\w-]{1,20}", i)][:100]
+    if not ids:
+        return {"items": []}
+    return {"items": item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(ids))})", ids)}
+
+
 def shops():
     rows = db().execute("""SELECT s.domain, s.category, COUNT(p.id) n
                            FROM shops s LEFT JOIN products p ON p.shop = s.domain GROUP BY s.domain ORDER BY n DESC""")
@@ -723,6 +731,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/search":
                 self.count("search")
                 return self._send(200, search(q.get("q", ""), page_num(q)))
+            if path == "/api/items":
+                return self._send(200, items_by_ids(q.get("ids", "")))
             if path == "/api/dupes":
                 return self._send(200, dupe_list(q), cache="public, max-age=600")
             if path == "/api/shops":

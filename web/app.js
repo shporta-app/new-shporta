@@ -49,6 +49,38 @@ async function api(path) {
   return data;
 }
 
+// Products a visitor follows: kept only in this browser (no account, nothing sent to us but the product ids when the
+// list is opened), with the cheapest price on the day they saved it, so the list can say what changed since.
+const WATCH_KEY = "shporta-lista";
+const watchList = () => { try { return JSON.parse(localStorage.getItem(WATCH_KEY)) || []; } catch { return []; } };
+const watchSave = (l) => { try { localStorage.setItem(WATCH_KEY, JSON.stringify(l.slice(0, 100))); } catch {} watchBadge(); };
+const watching = (id) => watchList().some((w) => w.id === id);
+function watchToggle(it) {
+  const l = watchList();
+  if (l.some((w) => w.id === it.id)) return watchSave(l.filter((w) => w.id !== it.id)), false;
+  watchSave([{ id: it.id, title: it.title, image: it.image, size: it.size, currency: it.currency,
+               price: it.min_price, saved: new Date().toISOString().slice(0, 10) }, ...l]);
+  return true;
+}
+// the newest prices for the list, at most once per page view; marks which ones are cheaper than when saved
+let watchNow;
+async function watchFetch() {
+  const l = watchList();
+  if (!l.length) return [];
+  if (!watchNow) watchNow = api(`/api/items?ids=${l.map((w) => encodeURIComponent(w.id)).join(",")}`).then((d) => d.items).catch(() => null);
+  const now = await watchNow;
+  const by = new Map((now || []).map((i) => [i.id, i]));
+  return l.map((w) => ({ ...w, now: now ? by.get(w.id) || null : undefined }));
+}
+const dropped = (w) => w.now && w.now.currency === w.currency && w.now.in_stock_shops > 0 && w.now.min_price < w.price;
+function watchBadge() {
+  const a = document.getElementById("nav-lista");
+  if (!a) return;
+  const n = watchList().length;
+  a.hidden = !n;
+  a.querySelector("span").textContent = n ? ` (${n})` : "";
+}
+
 /* ---------- shared pieces ---------- */
 
 // One product, every shop's price: a bar per shop ending in a price tag; the cheapest in-stock one is lime.
@@ -307,6 +339,8 @@ async function pageItem(id) {
           <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
         </div>
         ${story}
+        <p class="watch"><button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
+          <small>Ruhet vetëm në këtë shfletues. Kur rihap shportën, të tregojmë nëse çmimi ra.</small></p>
         ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
         <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
@@ -332,6 +366,54 @@ async function pageItem(id) {
     ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Emër i ngjashëm: nuk e konfirmojmë që është i njëjti produkt. Nga dyqane të tjera, më të lirat së pari.</p>
       <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
   </div>`;
+  const btn = document.getElementById("watch");
+  const label = () => { btn.textContent = watching(it.id) ? "E ndjek ✓ (hiqe)" : "Ndiq çmimin"; btn.setAttribute("aria-pressed", watching(it.id)); };
+  label();
+  btn.onclick = () => { watchToggle(it); watchNow = null; label(); };
+}
+
+async function pageList() {
+  document.title = "Produktet që ndjek | shporta";
+  const l = await watchFetch();
+  const row = (w) => {
+    const n = w.now;
+    const change = n === undefined ? `<span class="hist">Çmimi i sotëm nuk u ngarkua.</span>`
+      : !n ? `<span class="hist">Nuk e gjejmë më në asnjë dyqan.</span>`
+      : !n.in_stock_shops ? `<span class="hist">S'ka gjendje askund tani.</span>`
+      : n.currency !== w.currency || n.min_price === w.price ? `<span class="hist">Njësoj si më ${day(w.saved)}.</span>`
+      : n.min_price < w.price ? `<span class="hist down">Ra ${lek(w.price - n.min_price, w.currency)} që nga ${day(w.saved)} (ishte ${lek(w.price, w.currency)}).</span>`
+      : `<span class="hist up">U rrit ${lek(n.min_price - w.price, w.currency)} që nga ${day(w.saved)} (ishte ${lek(w.price, w.currency)}).</span>`;
+    return `<li class="${dropped(w) ? "drop" : ""}">
+      <a href="/produkt/${esc(w.id)}" data-link>${img(w.image, w.title)}
+        <span><span class="name">${esc(w.title)}${w.size ? ` <small>${esc(w.size)}</small>` : ""}</span>
+        <span class="num">${n ? `${n.shops > 1 ? "nga " : ""}${lek(n.min_price, n.currency)}` : ""}</span>${change}</span></a>
+      <button type="button" class="btn btn-ghost" data-unwatch="${esc(w.id)}">Hiqe</button></li>`;
+  };
+  const drops = l.filter(dropped);
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head"><h1>produktet që ndjek</h1>
+      <p>${l.length ? `${plural(l.length, "produkt", "produkte")}${drops.length ? `, ${drops.length} me çmim më të ulët se kur e ruajte` : ""}.` : ""}
+        Lista ruhet vetëm në këtë shfletues: nuk ka llogari dhe ne nuk e shohim. Krahasojmë çmimin më të lirë në stok sot me atë të ditës kur e ruajte.</p></div>
+    ${l.length ? `<ul class="watchlist">${[...drops, ...l.filter((w) => !dropped(w))].map(row).join("")}</ul>`
+      : `<div class="empty"><b>Nuk ndjek asnjë produkt ende.</b>Hap një produkt dhe shtyp "Ndiq çmimin". Kur rihap shportën, këtu shikon nëse çmimi ra.</div>`}
+  </div>`;
+  main.querySelectorAll("[data-unwatch]").forEach((b) => (b.onclick = () => {
+    watchSave(watchList().filter((w) => w.id !== b.dataset.unwatch));
+    watchNow = null;
+    pageList();
+  }));
+}
+
+// on the home page: products in the visitor's list that are cheaper now than when they saved them
+async function watchStrip() {
+  const drops = (await watchFetch()).filter(dropped);
+  if (!drops.length || location.pathname !== "/") return;
+  const box = document.createElement("section");
+  box.className = "section watch-strip";
+  box.innerHTML = `<div class="wrap"><p><b>Ra çmimi te ${plural(drops.length, "produkt", "produkte")} që ndjek:</b>
+    ${drops.slice(0, 3).map((w) => `<a href="/produkt/${esc(w.id)}" data-link>${esc(w.title)}</a> (${lek(w.price, w.currency)} → ${lek(w.now.min_price, w.currency)})`).join(", ")}${drops.length > 3 ? "…" : ""}
+    <a class="btn" href="/lista" data-link>Shiko listën</a></p></div>`;
+  main.prepend(box);
 }
 
 async function pageSearch(params) {
@@ -496,6 +578,9 @@ function pagePrivacy() {
     <p>Për çdo faqe që hap numërojmë llojin e faqes, ditën dhe faqen nga erdhe (p.sh. google.com). Që një vizitor të numërohet
       vetëm një herë në ditë, përdorim një kod të përkohshëm të krijuar nga adresa dhe shfletuesi yt bashkë me një çelës që
       ndryshon çdo ditë dhe fshihet. Adresën (IP) nuk e ruajmë, dhe të nesërmen kodi nuk mund të lidhet më me ty.</p>
+    <h2>Produktet që ndjek</h2>
+    <p>Kur shtyp "Ndiq çmimin", produkti dhe çmimi i asaj dite ruhen vetëm në këtë shfletues (localStorage), jo te ne.
+      Kur hap listën, shfletuesi na kërkon vetëm çmimet e sotme për ato produkte. Për ta fshirë, hiqi nga lista ose fshi të dhënat e faqes.</p>
     <h2>Kur kalon te një dyqan</h2>
     <p>Lidhjet "Hape në dyqan" kalojnë nga <code>shporta.app/go/…</code>. Ruajmë cilin produkt dhe cilin dyqan zgjodhe dhe kur. Lidhjes i shtojmë
       <code>utm_source=shporta</code>, që dyqani ta dijë se vizita erdhi nga shporta. Kjo mund të na lejojë në të ardhmen të marrim një komision nga dyqani
@@ -569,7 +654,7 @@ async function route() {
   document.title = "shporta: krahaso çmimet e modës dhe kozmetikës në Shqipëri";
   try {
     let m;
-    if (pathname === "/") await pageHome();
+    if (pathname === "/") { await pageHome(); watchStrip(); }
     else if (pathname === "/kategorite") await pageCategories();
     else if ((m = pathname.match(/^\/kategori\/([\w-]+)$/))) await pageCategory(m[1], params);
     else if ((m = pathname.match(/^\/produkt\/([\w-]+)$/))) await pageItem(m[1]);
@@ -580,6 +665,7 @@ async function route() {
     else if (pathname === "/rreth") await pageAbout();
     else if (pathname === "/dupe") await pageDupes(params);
     else if (pathname === "/ndaj") await pageShare(params);
+    else if (pathname === "/lista") await pageList();
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {
     main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>
@@ -608,5 +694,6 @@ document.addEventListener("submit", (e) => {
 });
 window.addEventListener("popstate", route);
 route();
+watchBadge();
 consentBanner();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
