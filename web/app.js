@@ -428,16 +428,31 @@ function pageExtension() {
         <ol><li>Hap një produkt në çdo dyqan online.</li><li>Në cep të faqes del çmimi: i mirë, normal apo i lartë.</li><li>Kliko një dyqan më të lirë për ta hapur.</li></ol>
       </div>
     </section>
-    <section class="section"><h2>instalimi (version testimi)</h2>
-      <p class="lead">Shtesa nuk është ende në Chrome Web Store. Për ta provuar në Chrome ose Edge:</p>
+    <section class="section"><h2>instalimi</h2>
+      <p class="lead"><b>Microsoft Edge:</b> <a href="https://microsoftedge.microsoft.com/addons/detail/joenbehibjodnkecldnmggdpoigedceh" target="_blank" rel="noopener">shto shtesën nga dyqani i Edge</a>.<br>
+        <b>Firefox:</b> së shpejti, është në shqyrtim te Mozilla.<br>
+        <b>Chrome dhe shfletues të tjerë:</b> shtesa nuk është ende në Chrome Web Store. Deri atëherë përdor butonin më poshtë.</p>
+    </section>
+    <section class="section" id="bookmarklet"><h2>butoni "Krahaso në shporta"</h2>
+      <p class="lead">Një buton në shiritin e faqeve të ruajtura (bookmarks), pa instaluar asgjë. Funksionon në Chrome, Edge, Firefox, Brave dhe Opera në kompjuter.</p>
+      <p><a class="btn bookmarklet" href="${BOOKMARKLET}" draggable="true" title="Tërhiqe në shiritin e bookmarks">Krahaso në shporta</a></p>
       <ol>
-        <li>Shkarko dosjen <code>extension</code> nga <a href="https://github.com/shporta-app/new-shporta" target="_blank" rel="noopener">github.com/shporta-app/new-shporta</a>.</li>
-        <li>Hap <code>chrome://extensions</code> dhe aktivizo <b>Developer mode</b>.</li>
-        <li>Kliko <b>Load unpacked</b> dhe zgjidh dosjen <code>extension</code>.</li>
+        <li>Nëse nuk e sheh shiritin e bookmarks, shtyp <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> (në Mac <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).</li>
+        <li>Tërhiq butonin vjollcë më sipër me maus dhe lësho atë në shiritin e bookmarks.</li>
+        <li>Kur shikon një produkt në çdo dyqan online, kliko <b>Krahaso në shporta</b> në shirit. Shporta hapet në një skedë të re me të njëjtin produkt, në të njëjtën madhësi, në dyqanet e tjera.</li>
       </ol>
+      <p class="lead">Butoni i dërgon shportës vetëm adresën dhe emrin e faqes që ke hapur, njësoj si kur ngjit linkun te <a href="/ndaj" data-link>Krahaso një link</a>. Në telefon përdor <a href="/ndaj" data-link>Krahaso një link</a>.</p>
     </section>
   </div>`;
+  const b = main.querySelector(".bookmarklet");
+  b.onclick = (e) => { e.preventDefault(); b.textContent = "Tërhiqe në shiritin e bookmarks, mos e kliko këtu"; };
 }
+
+// The bookmark button: opens /ndaj for the page it's clicked on, with the product's name (og:title, else the first
+// heading, else the tab title; /ndaj strips the "| Shop" part) and the page address, which identifies pages we know.
+const BOOKMARKLET = "javascript:(()=>{const m=document.querySelector('meta[property=&quot;og:title&quot;]'),h=document.querySelector('h1'),"
+  + "t=((m&&m.content)||(h&&h.innerText)||document.title).trim().slice(0,200);"
+  + "window.open('https://shporta.app/ndaj?url='+encodeURIComponent(location.href.split('#')[0])+'&amp;title='+encodeURIComponent(t))})()";
 
 function pagePrivacy() {
   document.title = "Cookies dhe privatësia | shporta";
