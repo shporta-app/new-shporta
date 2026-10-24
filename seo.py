@@ -360,7 +360,7 @@ AI_BOTS = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-Searc
 
 
 def robots_txt():
-    rules = "Allow: /\nDisallow: /go/\nDisallow: /api/\nDisallow: /kerko\nDisallow: /ndaj\nDisallow: /lista\n"
+    rules = "Allow: /\nDisallow: /go/\nDisallow: /api/\nDisallow: /kerko\nDisallow: /ndaj\nDisallow: /lista\nDisallow: /njoftim/\n"
     named = "".join(f"User-agent: {b}\n" for b in AI_BOTS)
     return (f"# shporta.app: price comparison for Albanian online shops. Search engines and AI assistants are welcome.\n"
             f"User-agent: *\n{rules}\n{named}{rules}\nSitemap: {BASE}/sitemap.xml\n")
