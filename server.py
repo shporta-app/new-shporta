@@ -21,6 +21,7 @@ import math
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import sys
 import sqlite3
@@ -753,7 +754,7 @@ CLICKS_LOCK = threading.Lock()
 CLICKS = collections.Counter()  # since the last restart; every click is also printed to the log
 
 
-def outbound(pid, item_id, from_page, visitor, count=True):
+def outbound(pid, item_id, from_page, visitor, count=True, cid=None):
     r = db().execute("SELECT shop, url FROM products WHERE id = ?", (pid,)).fetchone()
     if not r or not r["url"]:
         return None
@@ -761,7 +762,8 @@ def outbound(pid, item_id, from_page, visitor, count=True):
     if u.scheme not in ("http", "https"):
         return None
     q = [p for p in u.query.split("&") if p and not p.startswith("utm_")]
-    q += ["utm_source=shporta", "utm_medium=referral", "utm_campaign=krahasimi"]
+    q = [p for p in q if not p.startswith("sp_click=")]
+    q += ["utm_source=shporta", "utm_medium=referral", "utm_campaign=krahasimi"] + ([f"sp_click={cid}"] if cid else [])
     if not count:
         return u._replace(query="&".join(q)).geturl(), r["shop"]
     with CLICKS_LOCK:
@@ -821,10 +823,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(204, b"")
 
-    def count(self, kind, shop=None, src=None):
+    def count(self, kind, shop=None, src=None, cid=None):
         # behind Caddy the visitor's address is in X-Forwarded-For; stats.py never stores it, only a daily hash
         ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
-        stats.record(kind, ip, self.headers.get("User-Agent", ""), self.headers.get("Referer", ""), shop=shop, src=src)
+        stats.record(kind, ip, self.headers.get("User-Agent", ""), self.headers.get("Referer", ""), shop=shop, src=src, cid=cid)
 
     def admin(self, q):
         token = os.environ.get("ADMIN_TOKEN")
@@ -880,10 +882,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not pid.isdigit() or len(pid) > 12:
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 # HEAD is a link checker or prefetch, not a shopper: never counted as a click
+                # a random number per click, not per person: a shop that agrees can report the order it led to
+                cid = secrets.token_urlsafe(6) if self.command == "GET" else None
                 dest, shop = outbound(int(pid), q.get("i", "")[:20], q.get("f", "")[:20], visitor,
-                                      count=self.command == "GET") or (None, None)
+                                      count=self.command == "GET", cid=cid) or (None, None)
                 if dest and self.command == "GET":
-                    self.count("click", shop=shop, src=q.get("f", ""))
+                    self.count("click", shop=shop, src=q.get("f", ""), cid=cid)
                 if not dest:
                     return self._send(404, {"error": "Ky link nuk ekziston më."})
                 self.send_response(302)

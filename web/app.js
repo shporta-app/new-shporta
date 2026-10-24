@@ -651,6 +651,10 @@ function pagePrivacy() {
     <p>Për çdo faqe që hap numërojmë llojin e faqes, ditën dhe faqen nga erdhe (p.sh. google.com). Që një vizitor të numërohet
       vetëm një herë në ditë, përdorim një kod të përkohshëm të krijuar nga adresa dhe shfletuesi yt bashkë me një çelës që
       ndryshon çdo ditë dhe fshihet. Adresën (IP) nuk e ruajmë, dhe të nesërmen kodi nuk mund të lidhet më me ty.</p>
+    <h2>Numri i klikimit</h2>
+    <p>Linku që të çon te dyqani ka një numër të rastësishëm klikimi (sp_click), krahas shenjës utm_source=shporta. Ai nuk lidhet me ty:
+      nuk ruajmë adresën tënde, as cookie, as emër. Një dyqan që bashkëpunon me ne mund të na thotë vetëm "porosia nga ky klikim u krye",
+      që të dimë sa blerje sjell shporta.</p>
     <h2>Produktet që ndjek</h2>
     <p>Kur shtyp "Ndiq çmimin", produkti dhe çmimi i asaj dite ruhen vetëm në këtë shfletues (localStorage), jo te ne.
       Kur hap listën, shfletuesi na kërkon vetëm çmimet e sotme për ato produkte. Për ta fshirë, hiqi nga lista ose fshi të dhënat e faqes.</p>

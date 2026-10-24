@@ -50,10 +50,12 @@ def bot_name(ua):
     return "other bot" if not ua or GENERIC_BOT.search(ua) else None
 
 
-def record(kind, ip, ua, referer="", host="shporta.app", shop=None, src=None):
+def record(kind, ip, ua, referer="", host="shporta.app", shop=None, src=None, cid=None):
     """kind: page | product | category | search | lookup | click. Never blocks a request.
     A click also keeps which shop it went to and from which part of shporta (product page, home, report, extension):
-    that's what we can show a shop about the visitors we send it."""
+    that's what we can show a shop about the visitors we send it. cid is the random number the link to the shop
+    carries (?sp_click=): never tied to the visitor, it only lets a shop that agrees to it tell us "this order came
+    from that click" (sales commission)."""
     try:
         today = date.today().isoformat()
         bot = bot_name(ua)
@@ -61,7 +63,7 @@ def record(kind, ip, ua, referer="", host="shporta.app", shop=None, src=None):
         if ref in ("", host, "shporta.app"):
             ref = ""
         visitor = None if bot else hashlib.sha256(f"{_daily_salt(today)}|{ip}|{ua}".encode()).hexdigest()[:16]
-        _q.put_nowait((today, kind, ref, visitor, bot, shop, (src or "")[:20] or None))
+        _q.put_nowait((today, kind, ref, visitor, bot, shop, (src or "")[:20] or None, cid))
     except Exception:
         pass
 
@@ -79,10 +81,10 @@ def _writer():
                 con.execute("CREATE TABLE IF NOT EXISTS hits (day TEXT, kind TEXT, ref TEXT, visitor TEXT, bot TEXT)")
                 con.execute("CREATE INDEX IF NOT EXISTS hits_day ON hits(day)")
                 have = {r[1] for r in con.execute("PRAGMA table_info(hits)")}
-                for col in ("shop", "src"):  # a database from before clicks were kept per shop
+                for col in ("shop", "src", "cid"):  # a database from before clicks were kept per shop
                     if col not in have:
                         con.execute(f"ALTER TABLE hits ADD COLUMN {col} TEXT")
-            con.executemany("INSERT INTO hits (day, kind, ref, visitor, bot, shop, src) VALUES (?,?,?,?,?,?,?)", rows)
+            con.executemany("INSERT INTO hits (day, kind, ref, visitor, bot, shop, src, cid) VALUES (?,?,?,?,?,?,?,?)", rows)
             con.commit()
         except Exception as e:
             print(f"stats: {e}", flush=True)
