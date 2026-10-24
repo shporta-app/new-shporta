@@ -79,7 +79,7 @@ def indexnow():
         ids = [r[0] for r in con.execute("SELECT id FROM items WHERE shops >= 2 ORDER BY shops DESC, save_pct DESC LIMIT 9900")]
         cats = [r[0] for r in con.execute("SELECT DISTINCT cat FROM items")]
         con.close()
-        urls = [seo.BASE + p for p in ("/", "/kategorite", "/dupe", "/dyqanet", "/rreth")] +                [f"{seo.BASE}/kategori/{c}" for c in cats] + [f"{seo.BASE}/produkt/{i}" for i in ids]
+        urls = [seo.BASE + p for p in ("/", "/raport", "/kategorite", "/dupe", "/dyqanet", "/rreth")] +                [f"{seo.BASE}/kategori/{c}" for c in cats] + [f"{seo.BASE}/produkt/{i}" for i in ids]
         body = json.dumps({"host": "shporta.app", "key": seo.INDEXNOW_KEY,
                            "keyLocation": f"{seo.BASE}/{seo.INDEXNOW_KEY}.txt", "urlList": urls}).encode()
         req = urllib.request.Request("https://api.indexnow.org/indexnow", data=body,

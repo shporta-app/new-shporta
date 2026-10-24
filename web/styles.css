@@ -236,6 +236,23 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .hist.up { color: #B4441F; }
 .hist.warn { color: #B4441F; font-weight: 600; white-space: normal; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hist.down { color: #8BD88F; } :root:not([data-theme="light"]) .hist.up, :root:not([data-theme="light"]) .hist.warn { color: #FF9A73; } }
+/* the price report (/raport) */
+.report-lead { display: grid; grid-template-columns: auto 1fr; gap: 10px 28px; align-items: center; padding: 10px 0 20px; }
+.report-lead p { margin: 0; font-size: 19px; line-height: 1.45; max-width: 36em; }
+.report-lead .big { font: 800 22px/1 var(--display); white-space: nowrap; }
+.report-lead .big b { display: block; font-size: clamp(64px, 12vw, 112px); background: var(--lime); color: #14121F; padding: 6px 14px; border-radius: 14px; margin-bottom: 8px; }
+@media (max-width: 640px) { .report-lead { grid-template-columns: 1fr; } }
+.cat-bars { list-style: none; padding: 0; margin: 0; max-width: 760px; }
+.cat-bars li { display: grid; grid-template-columns: 150px 1fr; gap: 2px 14px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cat-bars a { font-weight: 600; color: var(--ink); text-decoration: none; }
+.cat-bars .track { display: flex; align-items: center; gap: 10px; }
+.cat-bars .bar { height: 10px; border-radius: 5px; background: var(--violet); width: var(--w); }
+.cat-bars b { font: 600 17px var(--display); }
+.cat-bars small { grid-column: 2; color: var(--muted); font-size: 14px; }
+@media (max-width: 520px) { .cat-bars li { grid-template-columns: 1fr; } .cat-bars small { grid-column: 1; } }
+.table-scroll { overflow-x: auto; }
+.shops-table td.num, .shops-table th:not(:first-child) { text-align: right; }
+
 /* products a visitor follows (app.js pageList): the ones cheaper than when saved come first, marked lime */
 .watch { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 20px; }
 .watch small { color: var(--muted); font-size: 14px; max-width: 30em; }

@@ -255,6 +255,39 @@ def dupes_page(srv, q):
                           "/dupe", body, robots="noindex,follow" if q else "index,follow")
 
 
+def report_page(srv):
+    r = srv.cached_report()
+    if not r:
+        return not_found()
+    day = day_sq(r["updated"]) if r["updated"] else ""
+    cats = "".join(f'<li><a href="/kategori/{e(c["id"])}">{e(c["label"])}</a>: {c["median_more_pct"]}% më shumë '
+                   f'(diferenca tipike {lek(c["median_diff"])}, {num(c["products"])} produkte)</li>' for c in r["categories"])
+    shops = "".join(f'<li>{e(s["shop"].removeprefix("www."))}: më i liri te {s["cheapest_pct"]}% e {num(s["products"])} produkteve, '
+                    f'zakonisht {s["median_above_pct"]}% mbi çmimin më të ulët</li>' for s in r["shops_table"])
+    big = "".join(item_li(it) for it in r["biggest"])
+    lead = (f"Për {num(r['products'])} produkte që i shesin të paktën tre dyqane online në Shqipëri, në të njëjtën madhësi dhe në stok, "
+            f"dyqani më i shtrenjtë kërkon zakonisht {r['median_more_pct']}% më shumë se më i liri ({lek(r['median_diff'])} për produkt). "
+            f"Te {r['share_over_20']}% e produkteve diferenca kalon 20%, te {r['share_over_50']}% kalon 50%.")
+    body = f"""<div class="wrap"><h1>Raporti i çmimeve: sa më shumë paguan për të njëjtin produkt</h1>
+<p>Të dhënat e {e(day)}. {e(lead)}</p>
+<h2>Sipas kategorisë</h2><ul>{cats}</ul>
+<h2>Dyqanet</h2><ul>{shops}</ul>
+<h2>Diferencat më të mëdha në lek</h2><ul>{big}</ul>
+<h2>Si e llogaritëm</h2><p>Vetëm produkte të njëjta (marka, emri dhe madhësia), në stok në 3 ose më shumë dyqane, me çmim në lek. Për çdo dyqan merret çmimi i tij më i ulët për atë produkt. Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme.</p></div>"""
+    desc = (f"Sa më shumë kushton i njëjti produkt te dyqani më i shtrenjtë në Shqipëri: zakonisht {r['median_more_pct']}% "
+            f"({lek(r['median_diff'])}). Të dhëna për {num(r['products'])} produkte, sipas kategorisë dhe dyqanit, {day}.")
+    dataset = {"@context": "https://schema.org", "@type": "Dataset", "name": "Raporti i çmimeve të shportës",
+               "description": lead, "url": BASE + "/raport", "inLanguage": "sq", "isAccessibleForFree": True,
+               "creator": {"@id": BASE + "/#org"}, "spatialCoverage": {"@type": "Place", "name": "Albania"},
+               "dateModified": (r["updated"] or "")[:10], "temporalCoverage": f"{r['tracked_since'] or ''}/{(r['updated'] or '')[:10]}",
+               "variableMeasured": ["diferenca e çmimit mes dyqaneve (%)", "diferenca e çmimit mes dyqaneve (lek)"]}
+    article = {"@context": "https://schema.org", "@type": "Article", "headline": "Sa më shumë paguan për të njëjtin produkt në Shqipëri",
+               "description": desc, "inLanguage": "sq", "dateModified": r["updated"], "author": {"@id": BASE + "/#org"},
+               "publisher": {"@id": BASE + "/#org"}, "mainEntityOfPage": BASE + "/raport", "image": OG_IMAGE}
+    return 200, page_html("Raporti i çmimeve në Shqipëri: sa më shumë paguan për të njëjtin produkt | shporta", desc, "/raport", body,
+                          data=[article, dataset, breadcrumbs(("shporta", "/"), ("Raporti i çmimeve", "/raport"))], og_type="article")
+
+
 STATIC = {  # pages app.js draws itself; the server gives them a title, description and a short text
     "/shtesa": ("Shtesa për shfletuesin: krahaso çmimin ndërsa blen | shporta",
                 "Shtesa e shportës për Edge dhe Firefox, ose butoni për çdo shfletues: në faqen e një dyqani online të tregon nëse i njëjti produkt kushton më pak diku tjetër në Shqipëri.",
@@ -280,6 +313,8 @@ def render(srv, path, q):
         return shops_page(srv)
     if path == "/dupe":
         return dupes_page(srv, q)
+    if path == "/raport":
+        return report_page(srv)
     m = re.fullmatch(r"/kategori/([\w-]+)", path)
     if m:
         return category(srv, m[1], q) or not_found()
@@ -326,7 +361,7 @@ def urlset(urls, lastmod):
 
 def page_urls(srv):
     cats = [r[0] for r in srv.db().execute("SELECT cat FROM items GROUP BY cat HAVING COUNT(*) > 0")]
-    return [BASE + p for p in ("/", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia")] + \
+    return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia")] + \
            [f"{BASE}/kategori/{c}" for c in cats]
 
 
@@ -374,6 +409,7 @@ When citing a price, link the product page on shporta.app and mention the date: 
 
 ## Main pages
 - [Home]({BASE}/): biggest price differences today
+- [Price report]({BASE}/raport): how much more the same product costs across Albanian shops, by category and by shop (updated daily)
 - [How it works and FAQ]({BASE}/rreth)
 - [Categories]({BASE}/kategorite)
 - [Shops compared]({BASE}/dyqanet)

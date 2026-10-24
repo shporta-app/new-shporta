@@ -237,10 +237,8 @@ async function pageHome() {
 }
 
 // What not comparing costs: real numbers from the data, and a basic skincare routine priced both ways.
-function impactSection(d) {
-  const im = d.impact, r = d.routine;
-  if (!im) return "";
-  const receipt = r ? `<div class="receipt" aria-label="Rutina bazë e kujdesit për lëkurën">
+function receiptBox(r) {
+  return r ? `<div class="receipt" aria-label="Rutina bazë e kujdesit për lëkurën">
       <div class="receipt-head"><span>Rutina bazë e lëkurës</span><span>Më lirë</span><span>Më shtrenjtë</span></div>
       ${r.steps.map((s) => `<a class="receipt-row" href="/produkt/${esc(s.id)}" data-link>
           <span><small>${esc(s.step)}</small>${esc(s.title)}</span>
@@ -249,6 +247,11 @@ function impactSection(d) {
       <div class="receipt-diff"><span>Paguan më shumë për të njëjtat produkte</span><b class="num">${lek(r.difference)}</b></div>
       <p class="receipt-note">Po ta rinovosh rutinën 4 herë në vit, diferenca bëhet <b class="num">${lek(r.difference * 4)}</b> në vit.</p>
     </div>` : "";
+}
+function impactSection(d) {
+  const im = d.impact;
+  if (!im) return "";
+  const receipt = receiptBox(d.routine);
   return `<section class="section impact"><div class="wrap impact-in">
     <div>
       <h2>sa kushton të mos krahasosh</h2>
@@ -256,6 +259,7 @@ function impactSection(d) {
         <b>${im.median_more_pct}% më shumë</b> se më i liri. Te ${im.share_over_20}% e produkteve diferenca kalon 20%.</p>
       <p class="lead">E llogaritëm mbi ${im.products.toLocaleString("en").replace(/,/g, " ")} produkte që gjenden në stok në të paktën tre dyqane online në Shqipëri.
         Diferenca tipike për një produkt është ${lek(im.median_diff)}, çdo herë që e blen.</p>
+      <p><a class="btn btn-ghost" href="/raport" data-link>Raporti i plotë i çmimeve</a></p>
     </div>
     ${receipt}
   </div></section>`;
@@ -402,6 +406,45 @@ async function pageList() {
     watchNow = null;
     pageList();
   }));
+}
+
+// The price report: today's data, the same product across shops (server.report explains the rules)
+async function pageReport() {
+  const r = await api("/api/report");
+  document.title = "Raporti i çmimeve në Shqipëri | shporta";
+  const n = (x) => x.toLocaleString("en").replace(/,/g, " ");
+  const maxPct = Math.max(...r.categories.map((c) => c.median_more_pct), 1);
+  const cats = r.categories.map((c) => `<li>
+      <a href="/kategori/${esc(c.id)}" data-link>${esc(c.label)}</a>
+      <span class="track"><span class="bar" style="--w:${Math.max(8, (c.median_more_pct / maxPct) * 100).toFixed(1)}%"></span>
+        <b class="num">${c.median_more_pct}%</b></span>
+      <small>${lek(c.median_diff)} për produkt, ${plural(c.products, "produkt", "produkte")}</small></li>`).join("");
+  const shops = r.shops_table.map((s) => `<tr><td><b>${esc(shopName(s.shop))}</b></td><td class="num">${s.cheapest_pct}%</td>
+      <td class="num">${s.median_above_pct ? `+${s.median_above_pct}%` : "0%"}</td><td class="num">${n(s.products)}</td></tr>`).join("");
+  main.innerHTML = `<div class="wrap report">
+    <div class="page-head"><h1>raporti i çmimeve</h1>
+      <p>Të dhënat e ${dateSq(r.updated)}, nga ${plural(r.shops, "dyqan", "dyqane")} online në Shqipëri. Përditësohet çdo ditë.</p></div>
+    <section class="report-lead">
+      <p class="big"><b class="num">${r.median_more_pct}%</b> më shumë</p>
+      <p>paguan zakonisht te dyqani më i shtrenjtë, për të njëjtin produkt në të njëjtën madhësi. Kjo bën <b>${lek(r.median_diff)}</b> për produkt.
+        Te <b>${r.share_over_20}%</b> e produkteve diferenca kalon 20%, te <b>${r.share_over_50}%</b> kalon 50%.
+        Po të blije një herë secilin nga këto ${n(r.products)} produkte te dyqani më i shtrenjtë, do paguaje <b>${lek(r.total_diff)}</b> më shumë.</p>
+    </section>
+    <section class="section"><h2>sipas kategorisë</h2>
+      <p class="lead">Sa më shumë kërkon zakonisht dyqani më i shtrenjtë se më i liri.</p>
+      <ol class="cat-bars">${cats}</ol></section>
+    ${r.routine ? `<section class="section"><h2>një shembull: rutina bazë e lëkurës</h2>
+      <p class="lead">Të njëjtat produkte, te dyqani më i lirë dhe te më i shtrenjti.</p>${receiptBox(r.routine)}</section>` : ""}
+    <section class="section"><h2>dyqanet</h2>
+      <p class="lead">Për produktet që i shet secili dyqan bashkë me të paktën dy të tjerë: sa shpesh ka çmimin më të ulët, dhe sa mbi çmimin më të ulët është zakonisht. Vetëm dyqanet me 40+ produkte të tilla.</p>
+      <div class="table-scroll"><table class="offers shops-table"><thead><tr><th>Dyqani</th><th>Më i liri</th><th>Zakonisht mbi më të lirin</th><th>Produkte</th></tr></thead>
+        <tbody>${shops}</tbody></table></div></section>
+    <section class="section"><h2>diferencat më të mëdha në lek</h2>
+      <div class="deals">${r.biggest.map(deal).join("")}</div></section>
+    <section class="section"><h2>si e llogaritëm</h2>
+      <p class="note">Vetëm produkte të njëjta (marka, emri dhe madhësia), në stok në 3 ose më shumë dyqane, me çmim në lek. Për çdo dyqan merret çmimi i tij më i ulët për atë produkt.
+        Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme. Mund ta citosh këtë raport me link te shporta.app/raport dhe datën.</p></section>
+  </div>`;
 }
 
 // on the home page: products in the visitor's list that are cheaper now than when they saved them
@@ -666,6 +709,7 @@ async function route() {
     else if (pathname === "/dupe") await pageDupes(params);
     else if (pathname === "/ndaj") await pageShare(params);
     else if (pathname === "/lista") await pageList();
+    else if (pathname === "/raport") await pageReport();
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {
     main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>

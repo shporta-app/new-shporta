@@ -202,6 +202,65 @@ def impact():
             "median_diff": round(statistics.median(diff)), "share_over_20": round(sum(m >= 20 for m in more) / len(more) * 100)}
 
 
+def report():
+    """The price report (/raport): what the same product costs across shops, from today's data only. Products in stock
+    in 3+ shops, priced in lek; one price per shop (its cheapest listing of that size), so every number is a like-for-like gap."""
+    rows = db().execute("""SELECT p.item_id, p.shop, MIN(p.price), i.cat FROM items i CROSS JOIN products p ON p.item_id = i.id
+                           WHERE p.in_compare = 1 AND p.in_stock = 1 AND p.currency = 'ALL' AND p.price > 0
+                             AND i.in_stock_shops >= 3 AND i.currency = 'ALL' AND i.cat != 'tjeter' AND i.id LIKE 'g%'
+                           GROUP BY p.item_id, p.shop""").fetchall()
+    by_item = collections.defaultdict(dict)
+    cat_of = {}
+    for iid, shop, price, cat in rows:
+        by_item[iid][shop] = price
+        cat_of[iid] = cat
+    # a gap over 70% is more often two different products than a real price: left out, as on the home page
+    items = {i: s for i, s in by_item.items() if len(s) >= 3 and max(s.values()) / min(s.values()) <= 1 / 0.3}
+    if len(items) < 50:
+        return None
+    gap = {i: (max(s.values()) / min(s.values()) - 1) * 100 for i, s in items.items()}
+    diff = {i: max(s.values()) - min(s.values()) for i, s in items.items()}
+    cats = []
+    for c, label in CATEGORIES.items():
+        ids = [i for i in items if cat_of[i] == c]
+        if len(ids) >= 15:
+            cats.append({"id": c, "label": label, "products": len(ids), "median_more_pct": round(statistics.median(gap[i] for i in ids)),
+                         "median_diff": round(statistics.median(diff[i] for i in ids))})
+    cats.sort(key=lambda c: -c["median_more_pct"])
+    # per shop: of the compared products it sells, how often it has the lowest price, and how far above the lowest it is
+    shop_stats = collections.defaultdict(lambda: [0, 0, []])
+    for s in items.values():
+        lo = min(s.values())
+        for shop, p in s.items():
+            st = shop_stats[shop]
+            st[0] += 1
+            st[1] += p == lo
+            st[2].append((p / lo - 1) * 100)
+    shops = sorted(({"shop": sh, "products": n, "cheapest_pct": round(c / n * 100), "median_above_pct": round(statistics.median(a))}
+                    for sh, (n, c, a) in shop_stats.items() if n >= 40), key=lambda r: (r["median_above_pct"], -r["cheapest_pct"]))
+    top = sorted(items, key=lambda i: -diff[i])[:12]
+    biggest = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(top))})", top)
+    biggest.sort(key=lambda it: -diff[it["id"]])
+    more = sorted(gap.values())
+    return {"updated": meta("updated"), "tracked_since": TRACKED_SINCE, "products": len(items),
+            "shops": len({sh for s in items.values() for sh in s}),
+            "median_more_pct": round(statistics.median(more)), "median_diff": round(statistics.median(diff.values())),
+            "share_over_20": round(sum(m >= 20 for m in more) / len(more) * 100),
+            "share_over_50": round(sum(m >= 50 for m in more) / len(more) * 100),
+            "total_diff": round(sum(diff.values())), "categories": cats, "shops_table": shops, "biggest": biggest,
+            "routine": routine()}
+
+
+_report = {"at": 0, "data": None}
+
+
+def cached_report():
+    import time
+    if not _report["data"] or time.time() - _report["at"] > 3600:
+        _report["data"], _report["at"] = report(), time.time()
+    return _report["data"]
+
+
 # A basic skincare routine, priced with real matched products: one per step, the one sold in most shops.
 ROUTINE = [("Pastrues", r"cleans|pastrues|foam|cleansing"), ("Tonik", r"toner|tonik"),
            ("Serum", r"serum|essence|ampoule"), ("Krem hidratues", r"moistur|hidrat|face cream|krem fytyr|\bcream\b|\bkrem\b"),
@@ -731,6 +790,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/search":
                 self.count("search")
                 return self._send(200, search(q.get("q", ""), page_num(q)))
+            if path == "/api/report":
+                res = cached_report()
+                return self._send(200 if res else 404, res or {"error": "Raporti nuk është gati."}, cache="public, max-age=600")
             if path == "/api/items":
                 return self._send(200, items_by_ids(q.get("ids", "")))
             if path == "/api/dupes":
