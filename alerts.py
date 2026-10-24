@@ -43,7 +43,9 @@ def con():
     c.row_factory = sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS subs (id INTEGER PRIMARY KEY, email TEXT NOT NULL, item TEXT NOT NULL,
                  title TEXT, size TEXT, currency TEXT, price REAL, last_price REAL, token TEXT UNIQUE NOT NULL,
-                 confirmed INTEGER DEFAULT 0, created TEXT, last_sent TEXT, UNIQUE(email, item))""")
+                 confirmed INTEGER DEFAULT 0, created TEXT, last_sent TEXT, image TEXT, UNIQUE(email, item))""")
+    if "image" not in {r[1] for r in c.execute("PRAGMA table_info(subs)")}:  # a database from before the photo
+        c.execute("ALTER TABLE subs ADD COLUMN image TEXT")
     return c
 
 
@@ -55,10 +57,11 @@ def lek(n, cur="ALL"):
     return f"{round(n):,}".replace(",", " ") + " L"
 
 
-def send(to, subject, body_html, stop_url):
-    """One email through Resend's API. True when Resend accepted it."""
+def send(to, subject, body_html, body_text, stop_url):
+    """One email through Resend's API, as HTML and plain text. True when Resend accepted it."""
     req = urllib.request.Request("https://api.resend.com/emails", method="POST", data=json.dumps({
-        "from": SENDER, "to": [to], "subject": subject, "html": body_html,
+        "from": SENDER, "to": [to], "subject": subject, "html": body_html, "text": body_text,
+        "reply_to": os.environ.get("ALERT_REPLY_TO") or None,
         # Gmail and others show their own "unsubscribe" button for this
         "headers": {"List-Unsubscribe": f"<{stop_url}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},
     }).encode(), headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}", "Content-Type": "application/json",
@@ -73,14 +76,58 @@ def send(to, subject, body_html, stop_url):
     return False
 
 
-def page(title, inner):
-    e = html.escape
-    return f"""<!doctype html><html lang="sq"><body style="margin:0;background:#F7F6FA;font:16px/1.5 Arial,sans-serif;color:#14121F">
-<div style="max-width:560px;margin:0 auto;padding:28px 20px">
-<p style="font:800 22px Arial,sans-serif;margin:0 0 18px">shporta</p>
-<h1 style="font:700 21px/1.3 Arial,sans-serif;margin:0 0 14px">{e(title)}</h1>{inner}
-<p style="color:#6E6A7C;font-size:13px;margin-top:28px">Çmimet janë ato që dyqanet publikojnë në faqet e tyre, të kontrolluara çdo natë.
-Kontrollo gjithmonë çmimin dhe madhësinë te dyqani para se të blesh.</p></div></body></html>"""
+# ------------------------------------------------------------------ email design
+# Email clients ignore most CSS: tables, inline styles, web-safe fonts, PNG images (Gmail drops SVG).
+INK, PAPER, SOFT, LINE, MUTED, VIOLET, LIME = "#14121F", "#FFFFFF", "#F4F2F9", "#E6E3EE", "#6E6A7C", "#7B4DFF", "#C6F432"
+FONT = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+e = html.escape
+
+
+def button(url, label):
+    return (f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 6px"><tr>'
+            f'<td style="background:{VIOLET};border-radius:999px">'
+            f'<a href="{e(url)}" style="display:inline-block;padding:14px 26px;font:700 16px {FONT};color:#FFFFFF;'
+            f'text-decoration:none;border-radius:999px">{e(label)}</a></td></tr></table>')
+
+
+def product_card(title, size, image, url, price_html):
+    pic = (f'<img src="{e(image)}" width="88" height="88" alt="" style="display:block;width:88px;height:88px;'
+           f'object-fit:contain;background:#FFFFFF;border:1px solid {LINE};border-radius:12px">') if image else \
+          f'<div style="width:88px;height:88px;background:{SOFT};border-radius:12px"></div>'
+    return f"""<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+  style="border:1px solid {LINE};border-radius:16px;margin:18px 0 0"><tr>
+  <td width="112" style="padding:14px 0 14px 14px;vertical-align:top"><a href="{e(url)}">{pic}</a></td>
+  <td style="padding:14px 16px;vertical-align:top;font:15px/1.45 {FONT};color:{INK}">
+    <a href="{e(url)}" style="color:{INK};text-decoration:none;font-weight:700">{e(title)}</a>
+    {f'<div style="color:{MUTED};font-size:13px;margin-top:2px">{e(size)}</div>' if size else ""}
+    <div style="margin-top:10px">{price_html}</div></td></tr></table>"""
+
+
+def layout(preheader, heading, intro, body, why, stop_url):
+    """The frame of every email: logo band, white card, footer saying why it came and how to stop it."""
+    return f"""<!doctype html><html lang="sq"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>{e(heading)}</title></head>
+<body style="margin:0;padding:0;background:{SOFT};-webkit-text-size-adjust:100%">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:{SOFT}">{e(preheader)}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{SOFT}"><tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px">
+  <tr><td style="background:{INK};border-radius:18px 18px 0 0;padding:18px 24px">
+    <a href="{BASE}/" style="text-decoration:none"><img src="{BASE}/assets/icon-192.png" width="34" height="34" alt=""
+      style="vertical-align:middle;border-radius:8px;border:0"><span style="vertical-align:middle;margin-left:10px;
+      font:800 22px {FONT};color:#FFFFFF;letter-spacing:-.3px">shporta</span></a></td></tr>
+  <tr><td style="background:{PAPER};padding:30px 28px 30px;border-radius:0 0 18px 18px;font:16px/1.55 {FONT};color:{INK}">
+    <h1 style="margin:0 0 10px;font:800 24px/1.25 {FONT};color:{INK};letter-spacing:-.3px">{e(heading)}</h1>
+    <p style="margin:0;color:#3D3950">{intro}</p>
+    {body}
+  </td></tr>
+  <tr><td style="padding:22px 28px 0;font:12px/1.6 {FONT};color:{MUTED}">
+    {why}<br>Çmimet janë ato që dyqanet online publikojnë në faqet e tyre, të kontrolluara çdo natë. Kontrollo gjithmonë
+    çmimin dhe madhësinë te dyqani para se të blesh.<br><br>
+    <a href="{e(stop_url)}" style="color:{MUTED}">Ndalo njoftimet</a> &nbsp;·&nbsp;
+    <a href="{BASE}/privatesia" style="color:{MUTED}">Privatësia</a> &nbsp;·&nbsp;
+    <a href="{BASE}/" style="color:{MUTED}">shporta.app</a><br>
+    shporta krahason çmimet e dyqaneve online në Shqipëri. Nuk shesim asgjë.</td></tr>
+</table></td></tr></table></body></html>"""
 
 
 def subscribe(email, item, ip, lookup_item):
@@ -107,24 +154,42 @@ def subscribe(email, item, ip, lookup_item):
         known = next((r for r in rows if r["item"] == item), None)
         confirmed = any(r["confirmed"] for r in rows)  # this address already confirmed once: no second confirmation
         token = known["token"] if known else secrets.token_urlsafe(24)
-        c.execute("""INSERT INTO subs (email, item, title, size, currency, price, last_price, token, confirmed, created)
-                     VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(email, item) DO UPDATE SET price=excluded.price,
-                     last_price=excluded.last_price, title=excluded.title""",
+        c.execute("""INSERT INTO subs (email, item, title, size, currency, price, last_price, token, confirmed, created, image)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(email, item) DO UPDATE SET price=excluded.price,
+                     last_price=excluded.last_price, title=excluded.title, image=excluded.image""",
                   (email, item, it["title"], it.get("size"), it["currency"], price, price, token, int(confirmed),
-                   datetime.now().isoformat(timespec="seconds")))
+                   datetime.now().isoformat(timespec="seconds"), it.get("image")))
     if confirmed:
         return 200, f"Gati. Të shkruajmë te {email} kur {it['title']} të kushtojë më pak se {lek(price, it['currency'])}."
-    link = f"{BASE}/njoftim/konfirmo?t={token}"
-    stop_url = f"{BASE}/njoftim/ndalo?t={token}"
-    e = html.escape
-    ok = send(email, "Konfirmo njoftimin e çmimit në shporta", page("Konfirmo që do njoftime për këtë produkt", f"""
-<p>Dikush (shpresojmë ti) kërkoi njoftim në shporta.app kur bie çmimi i <b>{e(it['title'])}</b>{f" ({e(it['size'])})" if it.get('size') else ""}.
-Sot kushton më pak <b>{lek(price, it['currency'])}</b>.</p>
-<p><a href="{e(link)}" style="display:inline-block;background:#7B4DFF;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-weight:700">Po, më njofto</a></p>
-<p style="color:#6E6A7C;font-size:14px">Nëse nuk e kërkove ti, injoroje këtë email: pa konfirmim nuk të shkruajmë më, dhe adresa fshihet pas 7 ditësh.</p>"""), stop_url)
+    ok = send_confirmation(email, it, price, token)
     if not ok:
         return 502, "Emaili nuk u dërgua. Provo përsëri pas pak."
     return 200, f"Të dërguam një email te {email}. Hap linkun aty për ta konfirmuar."
+
+
+def send_confirmation(email, it, price, token):
+    link = f"{BASE}/njoftim/konfirmo?t={token}"
+    stop_url = f"{BASE}/njoftim/ndalo?t={token}"
+    url = f"{BASE}/produkt/{it['id']}"
+    cur = it["currency"]
+    shops = it.get("in_stock_shops") or 0
+    card = product_card(it["title"], it.get("size"), it.get("image"), url,
+                        f'<span style="font:800 20px {FONT};color:{INK}">{lek(price, cur)}</span>'
+                        f'<span style="color:{MUTED};font-size:13px"> &nbsp;çmimi më i lirë sot'
+                        f'{f" nga {shops} dyqane" if shops > 1 else ""}</span>')
+    body = card + button(link, "Po, më njofto kur bie çmimi") + f"""
+    <p style="margin:18px 0 0;font-size:14px;color:{MUTED}">Pas konfirmimit, kontrollojmë çmimin çdo natë në të gjitha dyqanet që krahasojmë
+    dhe të shkruajmë vetëm kur bie: i njëjti produkt, në të njëjtën madhësi, në stok.</p>
+    <p style="margin:12px 0 0;font-size:14px;color:{MUTED}">Nuk e kërkove ti? Injoroje këtë email. Pa konfirmim nuk të shkruajmë më,
+    dhe adresa fshihet pas 7 ditësh.</p>"""
+    html_body = layout(f"Një hap: konfirmo dhe të njoftojmë kur {it['title'][:50]} të kushtojë më pak.",
+                       "Konfirmo njoftimin e çmimit",
+                       "Kërkove të të njoftojmë kur bie çmimi i këtij produkti. Shtyp butonin për ta aktivizuar.",
+                       body, "Ke marrë këtë email sepse kjo adresë u shkrua te shporta.app për njoftimin e çmimit.", stop_url)
+    size = f" ({it['size']})" if it.get("size") else ""
+    text = (f"Konfirmo njoftimin e çmimit\n\n{it['title']}{size}\nSot: {lek(price, cur)} (çmimi më i lirë)\n\n"
+            f"Po, më njofto: {link}\n\nNuk e kërkove ti? Injoroje këtë email; adresa fshihet pas 7 ditësh.\n\nshporta.app")
+    return send(email, f"Konfirmo njoftimin: {it['title'][:60]}", html_body, text, stop_url)
 
 
 def confirm(token):
@@ -174,27 +239,59 @@ def check(seed_db, log=print):
             continue
         now = r[0]
         if now < (s["last_price"] or s["price"]) - 0.005:
-            by_email.setdefault(s["email"], []).append((s, now))
+            by_email.setdefault(s["email"], []).append({"sub": s, "now": now, "was": s["last_price"] or s["price"]})
     seed.close()
     sent = 0
-    e = html.escape
+    seed = sqlite3.connect(f"file:{seed_db}?mode=ro", uri=True)
     for email, drops in by_email.items():
-        rows = "".join(f"""<tr><td style="padding:10px 0;border-bottom:1px solid #E6E3EE">
-<a href="{BASE}/produkt/{e(s['item'])}" style="color:#14121F;font-weight:700">{e(s['title'])}</a>{f" <span style='color:#6E6A7C'>{e(s['size'])}</span>" if s['size'] else ""}<br>
-<span style="background:#C6F432;padding:2px 8px;border-radius:6px;font-weight:700">{lek(now, s['currency'])}</span>
-<span style="color:#6E6A7C"> ishte {lek(s['last_price'] or s['price'], s['currency'])}</span>
-<br><a href="{BASE}/njoftim/ndalo?t={e(s['token'])}" style="color:#6E6A7C;font-size:13px">Mos më njofto më për këtë</a></td></tr>""" for s, now in drops)
-        first = drops[0][0]
-        subject = (f"Ra çmimi: {first['title'][:60]}" if len(drops) == 1 else f"Ra çmimi i {len(drops)} produkteve që ndjek")
-        body = page("Çmimi ra" if len(drops) == 1 else f"Ra çmimi i {len(drops)} produkteve", f"""
-<p>Çmimi më i lirë në stok sot, në dyqanet online shqiptare që krahason shporta:</p><table style="width:100%;border-collapse:collapse">{rows}</table>
-<p><a href="{BASE}/produkt/{e(first['item'])}" style="display:inline-block;background:#7B4DFF;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;font-weight:700">Shiko ku kushton më lirë</a></p>
-<p style="font-size:13px;color:#6E6A7C"><a href="{BASE}/njoftim/ndalo?t={e(first['token'])}&amp;all=1" style="color:#6E6A7C">Ndalo të gjitha njoftimet</a></p>""")
-        if send(email, subject, body, f"{BASE}/njoftim/ndalo?t={first['token']}&all=1"):
+        if send_drops(email, drops, seed):
             sent += 1
             with con() as c:
-                for s, now in drops:
+                for d in drops:
                     c.execute("UPDATE subs SET last_price = ?, last_sent = ? WHERE id = ?",
-                              (now, datetime.now().isoformat(timespec="seconds"), s["id"]))
+                              (d["now"], datetime.now().isoformat(timespec="seconds"), d["sub"]["id"]))
         time.sleep(0.6)  # Resend allows a few requests per second
+    seed.close()
     log(f"alerts: {len(subs)} followed, {sent} emails sent")
+
+
+def send_drops(email, drops, seed):
+    """One email for every product of this address that got cheaper, the biggest saving first."""
+    drops.sort(key=lambda d: d["now"] - d["was"])
+    cards, lines = [], []
+    for d in drops:
+        s, cur = d["sub"], d["sub"]["currency"]
+        shop = seed.execute("""SELECT shop FROM products WHERE item_id = ? AND in_compare = 1 AND in_stock = 1 AND currency = ?
+                               ORDER BY price LIMIT 1""", (s["item"], cur)).fetchone()
+        shop = shop[0].removeprefix("www.") if shop else None
+        pct = round((d["was"] - d["now"]) / d["was"] * 100)
+        url = f"{BASE}/produkt/{s['item']}"
+        where = f'<div style="font-size:13px;color:{MUTED};margin-top:2px">Më lirë sot te {e(shop)}</div>' if shop else ""
+        cards.append(product_card(s["title"], s["size"], s["image"], url, f"""
+          <span style="font:800 22px {FONT};color:{INK};background:{LIME};padding:2px 10px;border-radius:8px">{lek(d['now'], cur)}</span>
+          <span style="color:{MUTED};font-size:14px;text-decoration:line-through;margin-left:6px">{lek(d['was'], cur)}</span>
+          <div style="margin-top:8px;font-size:14px;color:#2F7D32;font-weight:700">Kursen {lek(d['was'] - d['now'], cur)} (−{pct}%)</div>
+          {where}
+          <div style="margin-top:8px"><a href="{e(url)}" style="font-size:14px;color:{VIOLET};font-weight:700;text-decoration:none">Shiko çmimet në të gjitha dyqanet</a>
+          <span style="color:{LINE}"> | </span><a href="{BASE}/njoftim/ndalo?t={e(s['token'])}" style="font-size:13px;color:{MUTED}">mos më njofto më për këtë</a></div>"""))
+        size = f" ({s['size']})" if s["size"] else ""
+        at = f", më lirë te {shop}" if shop else ""
+        lines.append(f"{s['title']}{size}: {lek(d['now'], cur)}, ishte {lek(d['was'], cur)} "
+                     f"(kursen {lek(d['was'] - d['now'], cur)}){at}\n{url}")
+    first = drops[0]["sub"]
+    stop_url = f"{BASE}/njoftim/ndalo?t={first['token']}&all=1"
+    total = sum(d["was"] - d["now"] for d in drops if d["sub"]["currency"] == first["currency"])
+    if len(drops) == 1:
+        subject = f"Ra çmimi: {first['title'][:55]} tani {lek(drops[0]['now'], first['currency'])}"
+        heading, intro = "Çmimi ra", "Produkti që ndjek kushton më pak sot se herën e fundit që të shkruam."
+    else:
+        subject = f"Ra çmimi i {len(drops)} produkteve që ndjek"
+        heading = f"Ra çmimi i {len(drops)} produkteve"
+        intro = f"Bashkë kursen deri në <b>{lek(total, first['currency'])}</b> krahasuar me herën e fundit që të shkruam."
+    body = "".join(cards) + button(f"{BASE}/produkt/{first['item']}", "Shiko ku kushton më lirë") + f"""
+    <p style="margin:16px 0 0;font-size:13px;color:{MUTED}">Krahasojmë vetëm të njëjtin produkt në të njëjtën madhësi, në stok.
+    Çmimi mund të ndryshojë gjatë ditës: kontrolloje te dyqani.</p>"""
+    html_body = layout(f"{first['title'][:60]}: tani {lek(drops[0]['now'], first['currency'])}", heading, intro, body,
+                       "Ke marrë këtë email sepse kërkove njoftim për këtë produkt te shporta.app.", stop_url)
+    text = f"{heading}\n\n" + "\n\n".join(lines) + f"\n\nNdalo të gjitha njoftimet: {stop_url}\n\nshporta.app"
+    return send(email, subject, html_body, text, stop_url)
