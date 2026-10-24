@@ -251,6 +251,14 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 
 .prose { max-width: 760px; }
 .prose h2 { font: 600 21px var(--display); margin: 30px 0 6px; }
+.prose h1 { font: 800 clamp(30px, 5vw, 44px)/1.1 var(--display); margin: 34px 0 12px; }
+.prose .lead { font-size: 19px; color: var(--muted); }
+.prose ol { padding-left: 1.3em; }
+.prose li { margin: 6px 0; }
+.faq h3 { font: 600 18px var(--display); margin: 22px 0 4px; }
+.faq p { margin: 0; }
+main[data-ssr] { padding: 24px 0 48px; }
+main[data-ssr] ul { padding-left: 1.2em; }
 .prose code { background: var(--soft); padding: 1px 6px; border-radius: 4px; font-size: 15px; }
 .size-warn { border-left: 3px solid var(--violet); background: var(--violet-tint); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 15px; margin: 16px 0 0; }
 

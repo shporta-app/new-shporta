@@ -58,6 +58,30 @@ def publish():
     run("git", "commit", "-m", f"Prices {day}")
     run("git", "push", "origin", "HEAD:main")
     log(f"published data {commit[:10]}; Render redeploys from main")
+    indexnow()
+
+
+def indexnow():
+    """Tell Bing, Yandex and the other IndexNow engines which pages have new prices (Bing's index also feeds ChatGPT
+    search and Copilot). Google doesn't use IndexNow; it reads the sitemap. A failure here never stops the publish."""
+    import json
+    import sqlite3
+    import urllib.request
+    import seo
+    try:
+        con = sqlite3.connect(f"file:{HERE / 'seed' / 'phia-api.db'}?mode=ro", uri=True)
+        ids = [r[0] for r in con.execute("SELECT id FROM items WHERE shops >= 2 ORDER BY shops DESC, save_pct DESC LIMIT 9900")]
+        cats = [r[0] for r in con.execute("SELECT DISTINCT cat FROM items")]
+        con.close()
+        urls = [seo.BASE + p for p in ("/", "/kategorite", "/dupe", "/dyqanet", "/rreth")] +                [f"{seo.BASE}/kategori/{c}" for c in cats] + [f"{seo.BASE}/produkt/{i}" for i in ids]
+        body = json.dumps({"host": "shporta.app", "key": seo.INDEXNOW_KEY,
+                           "keyLocation": f"{seo.BASE}/{seo.INDEXNOW_KEY}.txt", "urlList": urls}).encode()
+        req = urllib.request.Request("https://api.indexnow.org/indexnow", data=body,
+                                     headers={"Content-Type": "application/json; charset=utf-8"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            log(f"IndexNow: {len(urls)} pages sent, answer {r.status}")
+    except Exception as e:
+        log(f"IndexNow failed (not a problem for the site): {e}")
 
 
 def main():

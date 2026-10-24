@@ -21,6 +21,7 @@ import mimetypes
 import os
 import re
 import shutil
+import sys
 import sqlite3
 import statistics
 import threading
@@ -30,6 +31,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import dupes
+import seo
 from match import GENERIC, MEN_WORDS, PERFUME_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
 
 HERE = Path(__file__).parent
@@ -642,6 +644,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         if cache:
             self.send_header("Cache-Control", cache)
+        if getattr(self, "noindex", False):
+            self.send_header("X-Robots-Tag", "noindex")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":  # HEAD gets the same headers without the body (link checkers use it)
@@ -657,7 +661,16 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         path = unquote(u.path)
+        if (self.headers.get("Host") or "").lower().startswith("www."):  # one address for search engines: shporta.app
+            self.send_response(301)
+            self.send_header("Location", seo.BASE + self.path)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         try:
+            crawl = self.crawler_file(path)
+            if crawl:
+                return self._send(200, crawl[1].encode(), crawl[0], cache="public, max-age=3600")
             if path == "/api/health":
                 return self._send(200, {"ok": True, "offers": db().execute("SELECT COUNT(*) FROM products").fetchone()[0]})
             if path == "/api/home":
@@ -699,13 +712,37 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(500, {"error": "Diçka shkoi keq. Provo përsëri."})
         # static files; anything else is a page of the single-page app
         f = (WEB / path.lstrip("/")).resolve()
+        if path.startswith("/pages/"):
+            self.noindex = True  # a piece of a page (the app loads it); the full page is the one to index
         if path != "/" and f.is_file() and WEB.resolve() in f.parents:
             ctype = mimetypes.guess_type(str(f))[0] or "application/octet-stream"
             return self._send(200, f.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text") or ctype.endswith("javascript") else ""),
                               cache="public, max-age=300")
         if path.startswith("/api/"):
             return self._send(404, {"error": "not found"})
-        return self._send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8")
+        # a page of the app: its own title, description, structured data and content, for search engines and AI crawlers
+        try:
+            code, page = seo.render(sys.modules[__name__], path, q)
+        except Exception as e:
+            print(json.dumps({"error": f"seo {type(e).__name__}: {e}", "path": path[:200]}), flush=True)
+            code, page = 200, (WEB / "index.html").read_text(encoding="utf-8")  # the app still works without it
+        return self._send(code, page.encode(), "text/html; charset=utf-8")
+
+    def crawler_file(self, path):
+        me = sys.modules[__name__]
+        if path == "/robots.txt":
+            return "text/plain; charset=utf-8", seo.robots_txt()
+        if path == "/llms.txt":
+            return "text/plain; charset=utf-8", seo.llms_txt(me)
+        if path == f"/{seo.INDEXNOW_KEY}.txt":
+            return "text/plain; charset=utf-8", seo.INDEXNOW_KEY
+        if path == "/sitemap.xml":
+            return "application/xml; charset=utf-8", seo.sitemap_index(me)
+        m = re.fullmatch(r"/sitemap-([\w-]+)\.xml", path)
+        if m:
+            xml = seo.sitemap(me, m[1])
+            return ("application/xml; charset=utf-8", xml) if xml else None
+        return None
 
     def do_POST(self):
         if urlparse(self.path).path != "/api/lookup":

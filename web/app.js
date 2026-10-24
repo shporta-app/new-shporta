@@ -6,7 +6,10 @@ const lek = (n, cur = "ALL") =>
   cur === "EUR" ? "€" + Number(n).toFixed(2) : cur === "USD" ? "$" + Number(n).toFixed(2)
   : cur && cur !== "ALL" ? Number(n).toFixed(2) + " " + cur  // never show a foreign price as lek
   : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L";
-const day = (d) => new Date(d + "T12:00:00").toLocaleDateString("sq-AL", { day: "numeric", month: "short" });
+// Albanian dates written out by hand: not every browser has Albanian locale data ("Oct 22" instead of "22 tetor")
+const MUAJ = ["janar", "shkurt", "mars", "prill", "maj", "qershor", "korrik", "gusht", "shtator", "tetor", "nëntor", "dhjetor"];
+const dateSq = (d, year = true) => { const x = new Date(d); return `${x.getDate()} ${MUAJ[x.getMonth()]}${year ? " " + x.getFullYear() : ""}`; };
+const day = (d) => dateSq(d + "T12:00:00", false);
 const daysAgo = (d) => Math.round((Date.now() - new Date(d + "T12:00:00")) / 864e5);
 
 // What the price history says about one shop's price (build_seed.price_history). Only facts we saw ourselves:
@@ -315,7 +318,7 @@ async function pageItem(id) {
         <p class="note">${multiShop
           ? "Krahasojmë vetëm të njëjtin produkt: i njëjti emër, e njëjta markë dhe e njëjta madhësi. Emri i saktë te çdo dyqan është poshtë çmimit, që ta kontrollosh vetë."
           : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}
-          ${it.tracked_since ? ` Çmimet i kontrollojmë çdo ditë që nga ${new Date(it.tracked_since + "T12:00:00").toLocaleDateString("sq-AL", { day: "numeric", month: "long", year: "numeric" })}.` : ""}</p>
+          ${it.tracked_since ? ` Çmimet i kontrollojmë çdo ditë që nga ${dateSq(it.tracked_since + "T12:00:00")}.` : ""}</p>
       </div>
     </div>
     ${it.dupes && it.dupes.length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2>
@@ -533,13 +536,21 @@ document.addEventListener("click", (e) => {
   if (b) setConsent(b.dataset.consent);
 });
 
+// How it works + FAQ: one text (web/pages/rreth.html), also what the server sends to search engines
+async function pageAbout() {
+  const r = await fetch("/pages/rreth.html");
+  if (!r.ok) throw new Error("Faqja nuk u ngarkua.");
+  main.innerHTML = await r.text();
+  document.title = "Si funksionon shporta: krahasimi i çmimeve në Shqipëri | shporta";
+}
+
 /* ---------- router ---------- */
 
 function setFoot(updated) {
   if (!updated) return;
   const d = new Date(updated);
   document.getElementById("foot-updated").textContent =
-    `Çmimet u përditësuan më ${d.toLocaleDateString("sq-AL", { day: "numeric", month: "long", year: "numeric" })}.`;
+    `Çmimet u përditësuan më ${dateSq(d)}.`;
 }
 
 async function route() {
@@ -548,7 +559,9 @@ async function route() {
   document.querySelectorAll(".top-nav a").forEach((a) => {
     if (pathname.startsWith(a.getAttribute("href"))) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
-  main.innerHTML = `<div class="wrap loading">Duke ngarkuar…</div>`;
+  // the first page already came from the server (seo.py): keep it on screen until the full one is ready
+  if (main.hasAttribute("data-ssr")) main.removeAttribute("data-ssr");
+  else main.innerHTML = `<div class="wrap loading">Duke ngarkuar…</div>`;
   document.title = "shporta: krahaso çmimet e modës dhe kozmetikës në Shqipëri";
   try {
     let m;
@@ -560,6 +573,7 @@ async function route() {
     else if (pathname === "/dyqanet") await pageShops();
     else if (pathname === "/shtesa") pageExtension();
     else if (pathname === "/privatesia") pagePrivacy();
+    else if (pathname === "/rreth") await pageAbout();
     else if (pathname === "/dupe") await pageDupes(params);
     else if (pathname === "/ndaj") await pageShare(params);
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
