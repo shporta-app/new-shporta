@@ -241,7 +241,8 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .report-lead p { margin: 0; font-size: 19px; line-height: 1.45; max-width: 36em; }
 .report-lead .big { font: 800 22px/1 var(--display); white-space: nowrap; }
 .report-lead .big b { display: block; font-size: clamp(64px, 12vw, 112px); background: var(--lime); color: #14121F; padding: 6px 14px; border-radius: 14px; margin-bottom: 8px; }
-@media (max-width: 640px) { .report-lead { grid-template-columns: 1fr; } }
+.report-lead .trend { grid-column: 2; font-size: 16px; color: var(--muted); }
+@media (max-width: 640px) { .report-lead .trend { grid-column: 1; } .report-lead { grid-template-columns: 1fr; } }
 .cat-bars { list-style: none; padding: 0; margin: 0; max-width: 760px; }
 .cat-bars li { display: grid; grid-template-columns: 150px 1fr; gap: 2px 14px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .cat-bars a { font-weight: 600; color: var(--ink); text-decoration: none; }

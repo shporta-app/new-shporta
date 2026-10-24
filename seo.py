@@ -255,11 +255,26 @@ def dupes_page(srv, q):
                           "/dupe", body, robots="noindex,follow" if q else "index,follow")
 
 
-def report_page(srv):
-    r = srv.cached_report()
+MUAJ = ["janar", "shkurt", "mars", "prill", "maj", "qershor", "korrik", "gusht", "shtator", "tetor", "nëntor", "dhjetor"]
+
+
+def month_sq(m):
+    """'2026-10' -> 'tetor 2026'"""
+    return f"{MUAJ[int(m[5:7]) - 1]} {m[:4]}"
+
+
+def report_page(srv, month=None):
+    r = srv.report_with_history(month)
     if not r:
         return not_found()
     day = day_sq(r["updated"]) if r["updated"] else ""
+    path = f"/raport/{month}" if month else "/raport"
+    when = f"{month_sq(month)} (të dhënat e {day})" if month else f"të dhënat e {day}"
+    prev = r.get("previous")
+    trend = (f"<p>Në {month_sq(prev['month'])} kjo shifër ishte {prev['median_more_pct']}% ({lek(prev['median_diff'])} për produkt).</p>"
+             if prev else "")
+    archive = "".join(f'<li><a href="/raport/{m}">Raporti i {month_sq(m)}</a></li>' for m in r["months"] if m != month)
+    archive = f"<h2>Raportet e mëparshme</h2><ul>{archive}</ul>" if archive else ""
     cats = "".join(f'<li><a href="/kategori/{e(c["id"])}">{e(c["label"])}</a>: {c["median_more_pct"]}% më shumë '
                    f'(diferenca tipike {lek(c["median_diff"])}, {num(c["products"])} produkte)</li>' for c in r["categories"])
     shops = "".join(f'<li>{e(s["shop"].removeprefix("www."))}: më i liri te {s["cheapest_pct"]}% e {num(s["products"])} produkteve, '
@@ -269,23 +284,25 @@ def report_page(srv):
             f"dyqani më i shtrenjtë kërkon zakonisht {r['median_more_pct']}% më shumë se më i liri ({lek(r['median_diff'])} për produkt). "
             f"Te {r['share_over_20']}% e produkteve diferenca kalon 20%, te {r['share_over_50']}% kalon 50%.")
     body = f"""<div class="wrap"><h1>Raporti i çmimeve: sa më shumë paguan për të njëjtin produkt</h1>
-<p>Të dhënat e {e(day)}. {e(lead)}</p>
+<p>{e(when.capitalize())}. {e(lead)}</p>{trend}
 <h2>Sipas kategorisë</h2><ul>{cats}</ul>
 <h2>Dyqanet</h2><ul>{shops}</ul>
 <h2>Diferencat më të mëdha në lek</h2><ul>{big}</ul>
-<h2>Si e llogaritëm</h2><p>Vetëm produkte të njëjta (marka, emri dhe madhësia), në stok në 3 ose më shumë dyqane, me çmim në lek. Për çdo dyqan merret çmimi i tij më i ulët për atë produkt. Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme.</p></div>"""
+<h2>Si e llogaritëm</h2><p>Vetëm produkte të njëjta (marka, emri dhe madhësia), në stok në 3 ose më shumë dyqane, me çmim në lek. Për çdo dyqan merret çmimi i tij më i ulët për atë produkt. Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme.</p>{archive}</div>"""
     desc = (f"Sa më shumë kushton i njëjti produkt te dyqani më i shtrenjtë në Shqipëri: zakonisht {r['median_more_pct']}% "
             f"({lek(r['median_diff'])}). Të dhëna për {num(r['products'])} produkte, sipas kategorisë dhe dyqanit, {day}.")
     dataset = {"@context": "https://schema.org", "@type": "Dataset", "name": "Raporti i çmimeve të shportës",
-               "description": lead, "url": BASE + "/raport", "inLanguage": "sq", "isAccessibleForFree": True,
+               "description": lead, "url": BASE + path, "inLanguage": "sq", "isAccessibleForFree": True,
                "creator": {"@id": BASE + "/#org"}, "spatialCoverage": {"@type": "Place", "name": "Albania"},
                "dateModified": (r["updated"] or "")[:10], "temporalCoverage": f"{r['tracked_since'] or ''}/{(r['updated'] or '')[:10]}",
                "variableMeasured": ["diferenca e çmimit mes dyqaneve (%)", "diferenca e çmimit mes dyqaneve (lek)"]}
     article = {"@context": "https://schema.org", "@type": "Article", "headline": "Sa më shumë paguan për të njëjtin produkt në Shqipëri",
                "description": desc, "inLanguage": "sq", "dateModified": r["updated"], "author": {"@id": BASE + "/#org"},
-               "publisher": {"@id": BASE + "/#org"}, "mainEntityOfPage": BASE + "/raport", "image": OG_IMAGE}
-    return 200, page_html("Raporti i çmimeve në Shqipëri: sa më shumë paguan për të njëjtin produkt | shporta", desc, "/raport", body,
-                          data=[article, dataset, breadcrumbs(("shporta", "/"), ("Raporti i çmimeve", "/raport"))], og_type="article")
+               "publisher": {"@id": BASE + "/#org"}, "mainEntityOfPage": BASE + path, "image": OG_IMAGE}
+    crumbs = [("shporta", "/"), ("Raporti i çmimeve", "/raport")] + ([(month_sq(month), path)] if month else [])
+    title = f"Raporti i çmimeve, {month_sq(month)}" if month else "Raporti i çmimeve në Shqipëri"
+    return 200, page_html(f"{title}: sa më shumë paguan për të njëjtin produkt | shporta", desc, path, body,
+                          data=[article, dataset, breadcrumbs(*crumbs)], og_type="article")
 
 
 STATIC = {  # pages app.js draws itself; the server gives them a title, description and a short text
@@ -315,6 +332,9 @@ def render(srv, path, q):
         return dupes_page(srv, q)
     if path == "/raport":
         return report_page(srv)
+    m = re.fullmatch(r"/raport/(\d{4}-\d{2})", path)
+    if m:
+        return report_page(srv, m[1])
     m = re.fullmatch(r"/kategori/([\w-]+)", path)
     if m:
         return category(srv, m[1], q) or not_found()
@@ -362,7 +382,7 @@ def urlset(urls, lastmod):
 def page_urls(srv):
     cats = [r[0] for r in srv.db().execute("SELECT cat FROM items GROUP BY cat HAVING COUNT(*) > 0")]
     return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia")] + \
-           [f"{BASE}/kategori/{c}" for c in cats]
+           [f"{BASE}/kategori/{c}" for c in cats] + [f"{BASE}/raport/{m}" for m in srv.report_months()]
 
 
 def product_urls(srv, chunk=None):

@@ -409,9 +409,14 @@ async function pageList() {
 }
 
 // The price report: today's data, the same product across shops (server.report explains the rules)
-async function pageReport() {
-  const r = await api("/api/report");
-  document.title = "Raporti i çmimeve në Shqipëri | shporta";
+const monthSq = (m) => `${MUAJ[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+async function pageReport(month) {
+  const r = await api(`/api/report${month ? `?month=${month}` : ""}`);
+  document.title = `Raporti i çmimeve${month ? `, ${monthSq(month)}` : " në Shqipëri"} | shporta`;
+  const prev = r.previous;
+  const trend = prev ? `<p class="trend">Në ${monthSq(prev.month)} ishte <b>${prev.median_more_pct}%</b> (${lek(prev.median_diff)} për produkt)${
+    prev.median_more_pct === r.median_more_pct ? ": njësoj." : prev.median_more_pct > r.median_more_pct ? ": diferencat janë ngushtuar." : ": diferencat janë rritur."}</p>` : "";
+  const others = (r.months || []).filter((m) => m !== month);
   const n = (x) => x.toLocaleString("en").replace(/,/g, " ");
   const maxPct = Math.max(...r.categories.map((c) => c.median_more_pct), 1);
   const cats = r.categories.map((c) => `<li>
@@ -422,13 +427,14 @@ async function pageReport() {
   const shops = r.shops_table.map((s) => `<tr><td><b>${esc(shopName(s.shop))}</b></td><td class="num">${s.cheapest_pct}%</td>
       <td class="num">${s.median_above_pct ? `+${s.median_above_pct}%` : "0%"}</td><td class="num">${n(s.products)}</td></tr>`).join("");
   main.innerHTML = `<div class="wrap report">
-    <div class="page-head"><h1>raporti i çmimeve</h1>
-      <p>Të dhënat e ${dateSq(r.updated)}, nga ${plural(r.shops, "dyqan", "dyqane")} online në Shqipëri. Përditësohet çdo ditë.</p></div>
+    <div class="page-head">${month ? `<div class="crumbs"><a href="/raport" data-link>Raporti i sotëm</a></div>` : ""}<h1>raporti i çmimeve${month ? `, ${monthSq(month)}` : ""}</h1>
+      <p>Të dhënat e ${dateSq(r.updated)}, nga ${plural(r.shops, "dyqan", "dyqane")} online në Shqipëri. ${month ? "Kopja e ruajtur e këtij muaji." : "Përditësohet çdo ditë."}</p></div>
     <section class="report-lead">
       <p class="big"><b class="num">${r.median_more_pct}%</b> më shumë</p>
       <p>paguan zakonisht te dyqani më i shtrenjtë, për të njëjtin produkt në të njëjtën madhësi. Kjo bën <b>${lek(r.median_diff)}</b> për produkt.
         Te <b>${r.share_over_20}%</b> e produkteve diferenca kalon 20%, te <b>${r.share_over_50}%</b> kalon 50%.
         Po të blije një herë secilin nga këto ${n(r.products)} produkte te dyqani më i shtrenjtë, do paguaje <b>${lek(r.total_diff)}</b> më shumë.</p>
+      ${trend}
     </section>
     <section class="section"><h2>sipas kategorisë</h2>
       <p class="lead">Sa më shumë kërkon zakonisht dyqani më i shtrenjtë se më i liri.</p>
@@ -443,7 +449,10 @@ async function pageReport() {
       <div class="deals">${r.biggest.map(deal).join("")}</div></section>
     <section class="section"><h2>si e llogaritëm</h2>
       <p class="note">Vetëm produkte të njëjta (marka, emri dhe madhësia), në stok në 3 ose më shumë dyqane, me çmim në lek. Për çdo dyqan merret çmimi i tij më i ulët për atë produkt.
-        Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme. Mund ta citosh këtë raport me link te shporta.app/raport dhe datën.</p></section>
+        Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme. Mund ta citosh këtë raport me link te shporta.app/raport dhe datën.
+        Çdo muaj ruajmë një kopje me të dhënat e ditës së fundit të muajit.</p></section>
+    ${others.length ? `<section class="section"><h2>raportet e muajve</h2><p class="cats">${others.map((m) =>
+      `<a href="/raport/${m}" data-link>${esc(monthSq(m))}</a>`).join("")}</p></section>` : ""}
   </div>`;
 }
 
@@ -710,6 +719,7 @@ async function route() {
     else if (pathname === "/ndaj") await pageShare(params);
     else if (pathname === "/lista") await pageList();
     else if (pathname === "/raport") await pageReport();
+    else if ((m = pathname.match(/^\/raport\/(\d{4}-\d{2})$/))) await pageReport(m[1]);
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {
     main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>

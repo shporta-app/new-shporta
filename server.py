@@ -252,13 +252,54 @@ def report():
 
 
 _report = {"at": 0, "data": None}
+REPORTS = Path(os.environ.get("REPORTS_DIR", HERE / "data" / "reports"))
 
 
 def cached_report():
     import time
     if not _report["data"] or time.time() - _report["at"] > 3600:
         _report["data"], _report["at"] = report(), time.time()
+        save_month(_report["data"])
     return _report["data"]
+
+
+def save_month(r):
+    """Keep this month's report: rewritten with each day's data, so a past month holds its last day's numbers.
+    The archive (/raport/2026-10) is what lets us say how prices moved, not just how they are today."""
+    if not r or not r.get("updated"):
+        return
+    try:
+        REPORTS.mkdir(parents=True, exist_ok=True)
+        tmp = REPORTS / f"{r['updated'][:7]}.json.tmp"
+        tmp.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(REPORTS / f"{r['updated'][:7]}.json")
+    except OSError as e:
+        print(json.dumps({"error": f"report archive: {e}"}), flush=True)
+
+
+def report_months():
+    return sorted((f.stem for f in REPORTS.glob("????-??.json")), reverse=True) if REPORTS.exists() else []
+
+
+def report_with_history(month=None):
+    """Today's report (no month) or an archived month, plus the list of months and the month before it to compare."""
+    r = cached_report() if not month else month_report(month)
+    if not r:
+        return None
+    months = report_months()
+    this = (r.get("updated") or "")[:7]
+    before = [m for m in months if m < this]
+    prev = month_report(before[0]) if before else None
+    keep = ("updated", "products", "median_more_pct", "median_diff", "share_over_20", "share_over_50")
+    return {**r, "month": month, "months": months,
+            "previous": {"month": before[0], **{k: prev.get(k) for k in keep}} if prev else None}
+
+
+def month_report(month):
+    if not re.fullmatch(r"\d{4}-\d{2}", month or ""):
+        return None
+    f = REPORTS / f"{month}.json"
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
 
 
 # A basic skincare routine, priced with real matched products: one per step, the one sold in most shops.
@@ -791,8 +832,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.count("search")
                 return self._send(200, search(q.get("q", ""), page_num(q)))
             if path == "/api/report":
-                res = cached_report()
-                return self._send(200 if res else 404, res or {"error": "Raporti nuk është gati."}, cache="public, max-age=600")
+                res = report_with_history(q.get("month"))
+                return self._send(200 if res else 404, res or {"error": "Ky raport nuk ekziston."}, cache="public, max-age=600")
             if path == "/api/items":
                 return self._send(200, items_by_ids(q.get("ids", "")))
             if path == "/api/dupes":
