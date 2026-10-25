@@ -77,33 +77,36 @@ class Client:
         return self.rp.can_fetch(UA, url)
 
     def get(self, url, **kw):
-        if not url.startswith("http"):
-            url = self.base + url
-        if not self.allowed(url):
-            raise Blocked(f"robots.txt disallows {url}")
-        wait = self._last + self.delay - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        self._last = time.monotonic()
-        r = self.s.get(url, timeout=30, **kw)
-        if r.status_code in (403, 429) or re.search(r"<title>Just a moment|cf-chl-opt|safeline", r.text[:5000], re.I):
-            raise Blocked(f"{r.status_code} / bot challenge at {url}")
-        return r
+        return self._request("get", url, **kw)
 
     def post(self, url, **kw):
         """Same rules as get(): robots.txt check, Crawl-delay, stop on 403/429/challenge."""
+        return self._request("post", url, **kw)
+
+    def _request(self, method, url, **kw):
         if not url.startswith("http"):
             url = self.base + url
         if not self.allowed(url):
             raise Blocked(f"robots.txt disallows {url}")
-        wait = self._last + self.delay - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        self._last = time.monotonic()
-        r = self.s.post(url, timeout=30, **kw)
-        if r.status_code in (403, 429) or re.search(r"<title>Just a moment|cf-chl-opt|safeline", r.text[:5000], re.I):
-            raise Blocked(f"{r.status_code} / bot challenge at {url}")
-        return r
+        # a slow or overloaded shop (timeout, 502/503/504) gets time, then at most two more tries further apart:
+        # waiting for a busy server, never a way around a refusal (403/429/challenge stop us at once)
+        for attempt, pause in enumerate((0, 30, 90)):
+            time.sleep(pause)
+            wait = self._last + self.delay - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.monotonic()
+            try:
+                r = getattr(self.s, method)(url, timeout=(15, 60), **kw)
+            except (requests.Timeout, requests.ConnectionError):
+                if attempt == 2:
+                    raise
+                continue
+            if r.status_code in (403, 429) or re.search(r"<title>Just a moment|cf-chl-opt|safeline", r.text[:5000], re.I):
+                raise Blocked(f"{r.status_code} / bot challenge at {url}")
+            if r.status_code in (502, 503, 504) and attempt < 2:
+                continue
+            return r
 
 
 def num(v):

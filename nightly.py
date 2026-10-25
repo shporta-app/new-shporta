@@ -82,12 +82,18 @@ def indexnow():
         urls = [seo.BASE + p for p in ("/", "/raport", "/kategorite", "/dupe", "/dyqanet", "/rreth")] +                [f"{seo.BASE}/kategori/{c}" for c in cats] + [f"{seo.BASE}/produkt/{i}" for i in ids]
         body = json.dumps({"host": "shporta.app", "key": seo.INDEXNOW_KEY,
                            "keyLocation": f"{seo.BASE}/{seo.INDEXNOW_KEY}.txt", "urlList": urls}).encode()
-        req = urllib.request.Request("https://api.indexnow.org/indexnow", data=body,
-                                     headers={"Content-Type": "application/json; charset=utf-8"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            log(f"IndexNow: {len(urls)} pages sent, answer {r.status}")
     except Exception as e:
         log(f"IndexNow failed (not a problem for the site): {e}")
+        return
+    # the shared endpoint sometimes answers 403 for a moment (2026-10-25 02:00, fine minutes later): Bing's own next
+    for endpoint in ("https://api.indexnow.org/indexnow", "https://www.bing.com/indexnow"):
+        try:
+            req = urllib.request.Request(endpoint, data=body, headers={"Content-Type": "application/json; charset=utf-8"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                log(f"IndexNow ({endpoint}): {len(urls)} pages sent, answer {r.status}")
+                return
+        except Exception as e:
+            log(f"IndexNow ({endpoint}) failed (not a problem for the site): {e}")
 
 
 PC_ONLY = [l.split()[0] for l in (HERE / "pc_only.txt").read_text(encoding="utf-8").splitlines()
