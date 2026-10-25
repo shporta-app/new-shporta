@@ -450,6 +450,10 @@ async function pageItem(id) {
   const label = () => { btn.textContent = watching(it.id) ? "E ndjek ✓ (hiqe)" : "Ndiq çmimin"; btn.setAttribute("aria-pressed", watching(it.id)); };
   label();
   btn.onclick = () => { watchToggle(it); watchNow = null; label(); };
+  if (location.hash === "#ndiq" && !watching(it.id)) {  // "Ndiq çmimin" from the browser extension
+    watchToggle(it); watchNow = null; label();
+    history.replaceState(null, "", location.pathname);
+  }
   const form = document.getElementById("alert-form");
   if (form) form.onsubmit = async (e) => {
     e.preventDefault();

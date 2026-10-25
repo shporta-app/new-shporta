@@ -1,11 +1,12 @@
-// Talks to shporta.app for the content script (it can't call our API itself from a shop's page).
-// Sends only the product name, price, currency and page address; stores nothing.
+// Talks to shporta.app for the content script (it can't call our API itself from a shop's page), sets the toolbar
+// badge (the saving on this page), and gives the popup the last result of the current tab.
+// Sends only the product name, price, currency, barcode and page address; stores nothing.
 const API = "https://shporta.app";
+// the service worker sleeps between events, so the last result per tab lives in session storage (cleared on restart)
 
 async function lookup(product) {
-  // the free server sleeps when idle and takes up to a minute to wake: wait for it once
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 75000);
+  const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch(`${API}/api/lookup`, {
       method: "POST",
@@ -20,10 +21,24 @@ async function lookup(product) {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-  if (msg.type !== "lookup") return;
-  lookup(msg.product)
-    .then((data) => reply({ ok: true, data }))
-    .catch((e) => reply({ ok: false, error: String(e) }));
-  return true; // keep the channel open for the async reply
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  const tab = sender.tab && sender.tab.id;
+  if (msg.type === "lookup") {
+    lookup(msg.product)
+      .then((data) => { if (tab != null) chrome.storage.session.set({ [`t${tab}`]: { product: msg.product, data } }); reply({ ok: true, data }); })
+      .catch((e) => reply({ ok: false, error: String(e) }));
+    return true; // keep the channel open for the async reply
+  }
+  if (msg.type === "badge" && tab != null) {
+    chrome.action.setBadgeText({ tabId: tab, text: msg.text || "" });
+    if (msg.color) chrome.action.setBadgeBackgroundColor({ tabId: tab, color: msg.color });
+    if (chrome.action.setBadgeTextColor) chrome.action.setBadgeTextColor({ tabId: tab, color: "#14121F" });
+    reply({});
+  }
+  if (msg.type === "last") {
+    chrome.storage.session.get(`t${msg.tab}`, (v) => reply((v && v[`t${msg.tab}`]) || null));
+    return true;
+  }
 });
+
+chrome.tabs.onRemoved.addListener((tab) => chrome.storage.session.remove(`t${tab}`));

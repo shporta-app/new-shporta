@@ -2,14 +2,16 @@
   "manifest_version": 3,
   "name": "shporta: krahaso çmimet",
   "short_name": "shporta",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "A është ky çmim i mirë? Kur shikon një produkt online, shporta të tregon ku e gjen më lirë në Shqipëri, dhe dupe më të lira.",
   "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     { "matches": ["https://*/*"], "js": ["content.js"], "run_at": "document_idle" }
   ],
+  "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://shporta.app/*"],
-  "action": { "default_title": "shporta", "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" } },
+  "web_accessible_resources": [{ "resources": ["icons/icon-48.png"], "matches": ["https://*/*"] }],
+  "action": { "default_title": "shporta", "default_popup": "popup.html", "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" } },
   "homepage_url": "https://shporta.app"
 }

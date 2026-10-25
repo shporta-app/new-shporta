@@ -683,7 +683,7 @@ def canonical_key(key):
     return r[0] if r else key
 
 
-def lookup(title, price=None, currency="ALL", url=""):
+def lookup(title, price=None, currency="ALL", url="", gtin=""):
     """What the extension shows for the product page a shopper has open, in three separate parts:
        exact    the same product in the same size at other shops (the only thing the price verdict uses)
        similar  only when there's no exact match: other products with most of the same words, never "the same"
@@ -704,6 +704,9 @@ def lookup(title, price=None, currency="ALL", url=""):
                 o["size"] = q["size_label"]
         out = {"query": q, "exact": exact, "verdict": None if q.get("no_verdict") else verdict(q["price"], currency, offers),
                "item": item_id}
+        v = out["verdict"]
+        if v and q["price"] and v["shops"] >= 2 and q["price"] < v["median"] * 0.65:
+            out["risk"] = True  # far below every other shop for the same product: a fake, a used one or another size?
         if item_id:  # shops selling it without stating the size: only counted, the product page lists them
             out["unconfirmed"] = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()[0] or 0
         # the same product name at shops not in the comparison: they don't state the size, or sell another size.
@@ -753,7 +756,21 @@ def lookup(title, price=None, currency="ALL", url=""):
         if size and size[1] and not q["size_label"]:
             q["size_label"] = size_label(*size)  # the page's own listing states it
 
-    # 2. otherwise by name, with match.py's rules: a specific name, and the same size
+    # 2. the barcode the shop's page publishes (schema.org gtin13 / gtin): exact, whatever the name says
+    from match import valid_gtin
+    g = valid_gtin(gtin)
+    if g:
+        try:
+            ids = [r[0] for r in db().execute("SELECT item FROM barcodes WHERE gtin = ? ORDER BY item", (g,))]
+        except sqlite3.OperationalError:
+            ids = []
+        grouped = [i for i in ids if i.startswith("g")]
+        if len(grouped) == 1:
+            it = db().execute("SELECT size FROM items WHERE id = ?", (grouped[0],)).fetchone()
+            q["size_label"], q["by_barcode"] = (it["size"] if it else q["size_label"]), True
+            return answer(compared(grouped[0]), grouped[0])
+
+    # 3. otherwise by name, with match.py's rules: a specific name, and the same size
     words = key.split()
     if not (len(words) >= 3 and any(w not in GENERIC for w in words)):
         return answer([])
@@ -1167,7 +1184,8 @@ class Handler(BaseHTTPRequestHandler):
                 price = None  # "nan", "inf", 0 or negative: as if the page showed no price
             cur = str(data.get("currency") or "ALL")[:3].upper()
             self.count("lookup")  # the extension or the share page asked about a shop's product page
-            return self._send(200, lookup(str(data.get("title", ""))[:300], price, cur, str(data.get("url", ""))[:500]))
+            return self._send(200, lookup(str(data.get("title", ""))[:300], price, cur, str(data.get("url", ""))[:500],
+                                          str(data.get("gtin", ""))[:20]))
         except (ValueError, KeyError, TypeError):
             return self._send(400, {"error": "Kërkesë e pavlefshme."})
         except Exception as e:

@@ -1,9 +1,10 @@
-// Reads the product on the page the shopper is viewing, asks shporta.app, shows a small panel.
-// It never contacts the shop and stores nothing from the page.
+// Reads the product on the page the shopper is viewing, asks shporta.app, shows a small pill that opens into a panel.
+// It never contacts the shop and stores nothing from the page (only, if asked, "don't show on this site").
 (() => {
   const SITE = "https://shporta.app";
   const CUR = { L: "ALL", LEK: "ALL", "LEKË": "ALL", LEKE: "ALL", ALL: "ALL", "€": "EUR", EUR: "EUR" };
   if (location.hostname.endsWith("shporta.app")) return;
+  const HOST = location.hostname.replace(/^www\./, "");
 
   function num(v) {
     if (v == null) return null;
@@ -14,6 +15,10 @@
     const n = parseFloat(s);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
+
+  // the barcode a shop publishes for search engines: the most exact way to know which product this is
+  const gtinOf = (d, offers) => [d.gtin13, d.gtin, d.gtin12, d.gtin14, d.gtin8, offers && (offers.gtin13 || offers.gtin)]
+    .map((g) => String(g || "").replace(/\D/g, "")).find((g) => [8, 12, 13, 14].includes(g.length)) || "";
 
   function fromJsonLd() {
     for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
@@ -29,7 +34,7 @@
           let offers = d.offers || (d.hasVariant && d.hasVariant[0] && d.hasVariant[0].offers);
           if (Array.isArray(offers)) offers = offers[0];
           const price = num(offers && (offers.price ?? offers.lowPrice));
-          if (d.name && price) return { title: d.name, price, currency: offers.priceCurrency || "ALL" };
+          if (d.name && price) return { title: d.name, price, currency: offers.priceCurrency || "ALL", gtin: gtinOf(d, offers) };
         }
         for (const k of ["@graph", "mainEntity", "itemListElement", "item"]) if (d[k]) stack.push(d[k]);
       }
@@ -43,7 +48,8 @@
       document.querySelector('[itemprop="price"]')?.getAttribute("content"));
     const title = m("og:title") || document.querySelector("h1")?.textContent;
     if (!price || !title) return null;
-    return { title: title.trim(), price, currency: m("product:price:currency") || m("og:price:currency") || "ALL" };
+    return { title: title.trim(), price, currency: m("product:price:currency") || m("og:price:currency") || "ALL",
+             gtin: String(m("gtin13") || m("product:ean") || "").replace(/\D/g, "") };
   }
 
   // Some big shops (Zara) put no product data in the page's code: only the visible text "3.950 ALL".
@@ -77,22 +83,55 @@
   const fmt = (n, c) => (c === "EUR" ? "€" + Number(n).toFixed(2) : c === "USD" ? "$" + Number(n).toFixed(2)
     : c && c !== "ALL" ? Number(n).toFixed(2) + " " + c : Math.round(n).toLocaleString("en").replace(/,/g, " ") + " L");
   const host = (d) => String(d || "").replace(/^www\./, "");
-  const LABEL = { good: ["Çmim i mirë", "#1f7a4d"], normal: ["Çmim normal", "#7a6a1f"], high: ["Çmim i lartë", "#b3261e"] };
+  const VERDICT = { good: ["Çmim i mirë", "good"], normal: ["Çmim normal", "normal"], high: ["Çmim i lartë", "high"] };
 
-  const STYLE = `.p{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:310px;max-width:calc(100vw - 32px);background:#fff;color:#14121F;
-     border:1px solid #E7E5EE;border-radius:12px;box-shadow:0 8px 28px rgba(20,18,31,.18);font:13px/1.4 system-ui,"Segoe UI",sans-serif;padding:12px 14px}
-    .brand{font-weight:800;letter-spacing:-.02em;color:#7B4DFF;font-size:13px;margin-bottom:4px}
-    .v{font-weight:700;font-size:15px}.s{color:#555;margin:2px 0 8px}
-    h3{margin:0 0 4px;font-size:13px;font-weight:700}
-    h4{margin:0 0 2px;font-size:12px;color:#6E6A7C;font-weight:600}
-    .alt{margin-top:10px;padding:8px 10px 2px;background:#F6F5F9;border-radius:8px}
-    a{display:flex;gap:10px;padding:6px 0;border-top:1px solid #eee;color:inherit;text-decoration:none;align-items:baseline;flex-wrap:wrap}
-    a:hover span{text-decoration:underline}
-    b{min-width:68px;font-variant-numeric:tabular-nums}span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-    i{font-style:normal;font-size:11px;background:#F1ECFF;color:#5B2EE0;border-radius:999px;padding:1px 7px;margin-left:78px}
-    .x{position:absolute;top:6px;right:8px;border:0;background:none;font-size:18px;cursor:pointer;color:#888}
-    .f{color:#888;font-size:11px;margin-top:6px}
-    a.more{display:block;color:#5B2EE0;font-size:12px}`;
+  // The panel's look: shporta's own (violet, lime for the cheapest, ink), light and dark, inside a shadow root
+  // so the shop's CSS can't touch it and ours can't touch the shop.
+  const STYLE = `
+    :host{all:initial}
+    *{box-sizing:border-box}
+    .w{position:fixed;right:16px;bottom:16px;z-index:2147483647;font:13px/1.45 system-ui,"Segoe UI",Roboto,sans-serif;color:var(--ink);
+      --ink:#14121F;--paper:#fff;--soft:#F6F5F9;--line:#E7E5EE;--muted:#6E6A7C;--violet:#7B4DFF;--vdeep:#5B2EE0;--tint:#F1ECFF;--lime:#C6F432}
+    @media (prefers-color-scheme:dark){.w{--ink:#F1EFF7;--paper:#1B1829;--soft:#241F38;--line:#2C2840;--muted:#A7A2B8;--violet:#A58BFF;--vdeep:#C2B1FF;--tint:#2B2445}}
+    .pill{display:flex;align-items:center;gap:8px;background:var(--ink);color:var(--paper);border:0;border-radius:999px;padding:7px 14px 7px 7px;
+      font:600 13px/1 system-ui,"Segoe UI",sans-serif;cursor:pointer;box-shadow:0 10px 28px rgba(20,18,31,.28)}
+    @media (prefers-color-scheme:dark){.pill{background:#F1EFF7;color:#14121F}}
+    .pill img{width:24px;height:24px;border-radius:7px}
+    .pill b{background:var(--lime);color:#14121F;border-radius:999px;padding:4px 8px}
+    .pill.warn b{background:#FFB497}
+    .p{width:340px;max-width:calc(100vw - 32px);max-height:min(560px,calc(100vh - 40px));overflow:auto;background:var(--paper);
+      border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 50px rgba(20,18,31,.28);padding:14px 16px 12px}
+    .hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .hd img{width:26px;height:26px;border-radius:8px}
+    .hd strong{font:800 16px/1 system-ui,sans-serif;letter-spacing:-.02em;flex:1}
+    .ic{border:0;background:var(--soft);color:var(--muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;line-height:28px}
+    .ic:hover{color:var(--ink)}
+    .verdict{border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--soft)}
+    .verdict.good{background:color-mix(in srgb,var(--lime) 28%,var(--paper))}
+    .verdict.high{background:color-mix(in srgb,#FF9A73 22%,var(--paper))}
+    .verdict .v{font-weight:800;font-size:15px}
+    .verdict .s{color:var(--muted);margin-top:2px}
+    .verdict .big{font:800 22px/1.1 system-ui,sans-serif;margin-top:4px}
+    .risk{border:1px solid #FFB497;background:color-mix(in srgb,#FF9A73 14%,var(--paper));border-radius:12px;padding:8px 10px;margin-bottom:10px;font-weight:600}
+    h3{margin:12px 0 4px;font-size:12px;color:var(--muted);font-weight:700;text-transform:none}
+    .note{color:var(--muted);font-size:12px;margin:2px 0 6px}
+    a.row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 0;border-top:1px solid var(--line);color:inherit;text-decoration:none;align-items:center}
+    a.row:hover .n{color:var(--violet)}
+    .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+    .pr{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .best .pr{background:var(--lime);color:#14121F;border-radius:6px;padding:1px 6px}
+    .bar{grid-column:1/-1;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+    .bar i{display:block;height:100%;background:var(--violet);border-radius:2px}
+    .best .bar i{background:var(--lime)}
+    .out{opacity:.5}
+    .chip{font-size:11px;background:var(--tint);color:var(--vdeep);border-radius:999px;padding:1px 7px;margin-left:4px}
+    .alt{margin-top:8px;padding:6px 10px 2px;background:var(--soft);border-radius:12px}
+    .acts{display:flex;gap:8px;margin-top:12px}
+    .btn{flex:1;text-align:center;font:700 13px/1 system-ui,sans-serif;border-radius:999px;padding:10px 12px;text-decoration:none;border:0;cursor:pointer}
+    .btn.pri{background:var(--violet);color:#fff}
+    .btn.sec{background:var(--soft);color:var(--ink)}
+    .ft{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px;margin-top:10px}
+    .ft button{border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer;font:inherit;padding:0}`;
 
   // Built with DOM nodes and textContent only: nothing from the page or the server is ever parsed as HTML.
   function node(tag, props = {}, ...children) {
@@ -105,107 +144,155 @@
     n.append(...children.filter(Boolean));
     return n;
   }
-  const link = (href, price, label, chip) => node("a", { href, target: "_blank", rel: "noopener" },
-    node("b", { text: price }), node("span", { text: label }), chip ? node("i", { text: chip }) : null);
+  const LOGO = chrome.runtime.getURL("icons/icon-48.png");
+  const go = (o) => `${SITE}/go/${encodeURIComponent(o.id)}?i=${encodeURIComponent(o.item || "")}&f=ext`;
 
-  // Three parts, never mixed: the same product in the same size (the only thing the price verdict uses),
-  // then, apart and labelled, other products: similar ones (only when there's no exact match) and dupes.
-  function render(product, data) {
+  function mount(build) {
     document.getElementById("shporta-host")?.remove();
-    const live = (data.exact || []).filter((o) => o.in_stock);
-    const exact = live.length ? live : data.exact || [];  // listed but out of stock is still "found", marked
-    const same = data.same_name || [];  // the same name where we can't confirm the size: each shop's size shown
-    const similar = exact.length || same.length ? [] : data.similar || [];
-    const dupes = data.dupes || [];
-    if (!exact.length && !same.length && !similar.length && !dupes.length)
-      return note("Ky produkt nuk gjendet në dyqanet e tjera që krahasojmë.", 7000);
-    const q = data.query || {};
     const el = document.createElement("div");
     el.id = "shporta-host";
     const root = el.attachShadow({ mode: "open" });
-    const panel = node("div", { class: "p", role: "dialog", "aria-label": "shporta" });
-    const close = node("button", { class: "x", title: "Mbyll", "aria-label": "Mbyll", text: "×" });
-    close.onclick = () => el.remove();
-    panel.append(close, node("div", { class: "brand", text: "shporta" }));
-    const go = (o) => `${SITE}/go/${encodeURIComponent(o.id)}?i=${encodeURIComponent(o.item || "")}&f=ext`;
-
-    if (exact.length) {
-      const v = data.verdict;
-      panel.append(node("h3", { text: "I njëjti produkt" + (q.size_label ? `, ${q.size_label}` : "") }));
-      if (q.size_assumed && q.size_label)
-        panel.append(node("div", { class: "s", text: `Kjo faqe nuk e shkruan madhësinë. E krahasuam me ${q.size_label}, sipas çmimit: kontrolloje te dyqani.` }));
-      if (v) {
-        panel.append(node("div", { class: "v", style: `color:${LABEL[v.label][1]}`, text: LABEL[v.label][0] }),
-          node("div", { class: "s", text: v.save ? `${fmt(v.save, product.currency)} më lirë te dyqani më i lirë`
-            : `Mesatarja në ${v.shops} dyqane: ${fmt(v.median, product.currency)}` }));
-      }
-      exact.slice(0, 5).forEach((o) => panel.append(link(go(o), fmt(o.price, o.currency),
-        host(o.shop) + (o.size ? ` · ${o.size}` : "") + (o.in_stock ? "" : " · s'ka gjendje tani"))));
-      if (data.unconfirmed && data.item && !same.length)
-        panel.append(node("a", { class: "more", href: `${SITE}/produkt/${encodeURIComponent(data.item)}`, target: "_blank", rel: "noopener",
-          text: `+${data.unconfirmed} dyqane e kanë pa shkruar madhësinë: shiko te shporta.app` }));
-    } else if (same.length) {
-      panel.append(node("h3", { text: "I njëjti produkt, madhësia nuk konfirmohet" }),
-        node("div", { class: "s", text: "Dyqanet e tjera nuk e shkruajnë madhësinë ose kanë madhësi tjetër: kontrolloje te secili." }));
-    } else {
-      panel.append(node("div", { class: "s", text: q.size_label
-        ? `Nuk e gjetëm këtë produkt, në madhësinë ${q.size_label}, në dyqane të tjera.`
-        : "Nuk e gjetëm këtë produkt në dyqane të tjera." }));
-    }
-    if (same.length) {
-      const box = node("div", { class: exact.length ? "alt" : "" },
-        exact.length ? node("h4", { text: "Edhe këto e kanë, në madhësi tjetër ose pa e shkruar" }) : null);
-      same.slice(0, 4).forEach((o) => box.append(link(go(o), fmt(o.price, o.currency),
-        `${host(o.shop)} · ${o.size ? `madhësia ${o.size}` : "pa madhësi"}${o.in_stock ? "" : " · s'ka gjendje"}`)));
-      panel.append(box);
-    }
-    if (similar.length) {
-      const box = node("div", { class: "alt" }, node("h4", { text: "Të ngjashme: nuk e konfirmojmë që është i njëjti produkt" }));
-      similar.slice(0, 4).forEach((o) => box.append(link(go(o), fmt(o.price, o.currency), `${host(o.shop)} · ${o.title}`)));
-      panel.append(box);
-    }
-    if (dupes.length) {
-      const box = node("div", { class: "alt" }, node("h4", { text: "Dupe: produkt tjetër, bën të njëjtën punë" }));
-      dupes.slice(0, 3).forEach((d) => box.append(
-        link(`${SITE}/produkt/${encodeURIComponent(d.dupe_id)}`, fmt(d.dupe_price, "ALL"), d.dupe_title, d.reason)));
-      panel.append(box);
-    }
-    panel.append(node("div", { class: "f", text: "Çmimet nga dyqanet online shqiptare, në shporta.app" }));
-    root.append(node("style", { text: STYLE }), panel);
+    const w = node("div", { class: "w" });
+    root.append(node("style", { text: STYLE }), w);
+    build(w, el);
     document.documentElement.appendChild(el);
+    return el;
+  }
+  const badge = (text, color) => chrome.runtime.sendMessage({ type: "badge", text, color }, () => void chrome.runtime.lastError);
+
+  // the short version, in the corner: what matters in one line; a click opens the panel
+  function summary(product, data) {
+    const live = (data.exact || []).filter((o) => o.in_stock);
+    const v = data.verdict;
+    if (data.risk) return ["Kujdes: çmim shumë i ulët", true];
+    if (v && v.save > 0) return [`${fmt(v.save, product.currency)} më lirë diku tjetër`, false];
+    if (v) return [VERDICT[v.label][0], false];
+    if (live.length) return [`Në ${live.length} dyqane të tjera`, false];
+    if ((data.dupes || []).length) return ["Ka dupe më të lirë", false];
+    if ((data.same_name || []).length || (data.similar || []).length) return ["Produkte të ngjashme", false];
+    return null;
   }
 
-  // A small note in the same corner, so the shopper always sees that shporta looked: while it searches
-  // (the free server can take up to a minute to wake), when nothing was found, or when the server didn't answer.
-  function note(text, closeAfter) {
-    document.getElementById("shporta-host")?.remove();
-    const el = document.createElement("div");
-    el.id = "shporta-host";
-    const root = el.attachShadow({ mode: "open" });
-    const close = node("button", { class: "x", title: "Mbyll", "aria-label": "Mbyll", text: "×" });
-    close.onclick = () => el.remove();
-    root.append(node("style", { text: STYLE }),
-      node("div", { class: "p", role: "status" }, close, node("div", { class: "brand", text: "shporta" }), node("div", { class: "s", text })));
-    document.documentElement.appendChild(el);
-    if (closeAfter) setTimeout(() => el.isConnected && el.remove(), closeAfter);
+  function render(product, data, open) {
+    const sum = summary(product, data);
+    if (!sum) { badge("", ""); return mount((w, el) => { w.append(pillNode("Nuk e gjetëm në dyqanet e tjera", false, () => el.remove())); setTimeout(() => el.isConnected && el.remove(), 6000); }); }
+    const v = data.verdict;
+    badge(data.risk ? "!" : v && v.save > 0 ? `-${v.save >= 1000 ? Math.round(v.save / 1000) + "k" : Math.round(v.save)}` : v ? "✓" : "",
+          data.risk ? "#FF9A73" : v && v.save > 0 ? "#C6F432" : "#7B4DFF");
+    mount((w, el) => {
+      const show = (expanded) => {
+        w.replaceChildren(expanded ? panelNode(product, data, el, () => show(false)) : pillNode(sum[0], sum[1], () => show(true)));
+      };
+      show(open);
+    });
+  }
+
+  function pillNode(text, warn, onclick) {
+    const b = node("button", { class: "pill" + (warn ? " warn" : ""), "aria-label": `shporta: ${text}. Hape` },
+      node("img", { src: LOGO, alt: "" }), node("span", { text: "shporta" }), node("b", { text }));
+    b.onclick = onclick;
+    return b;
+  }
+
+  // Three parts, never mixed: the same product in the same size (the only thing the price verdict uses),
+  // then, apart and labelled, other products: the same name in other sizes, similar ones and dupes.
+  function panelNode(product, data, el, minimize) {
+    const live = (data.exact || []).filter((o) => o.in_stock);
+    const exact = live.length ? live : data.exact || [];
+    const same = data.same_name || [];
+    const similar = exact.length || same.length ? [] : data.similar || [];
+    const dupes = data.dupes || [];
+    const q = data.query || {};
+    const p = node("div", { class: "p", role: "dialog", "aria-label": "shporta" });
+    const min = node("button", { class: "ic", title: "Zvogëlo", "aria-label": "Zvogëlo", text: "–" });
+    min.onclick = minimize;
+    const x = node("button", { class: "ic", title: "Mbyll", "aria-label": "Mbyll", text: "×" });
+    x.onclick = () => el.remove();
+    p.append(node("div", { class: "hd" }, node("img", { src: LOGO, alt: "" }), node("strong", { text: "shporta" }), min, x));
+
+    if (data.risk) p.append(node("div", { class: "risk", text:
+      "Ky çmim është shumë më i ulët se te dyqanet e tjera për të njëjtin produkt. Kontrollo që është origjinal, i ri dhe në të njëjtën madhësi." }));
+    const v = data.verdict;
+    if (exact.length && v) {
+      p.append(node("div", { class: `verdict ${VERDICT[v.label][1]}` },
+        node("div", { class: "v", text: VERDICT[v.label][0] }),
+        v.save > 0 ? node("div", { class: "big", text: `${fmt(v.save, product.currency)} më lirë` }) : null,
+        node("div", { class: "s", text: v.save > 0 ? `te dyqani më i lirë, për të njëjtin produkt${q.size_label ? " " + q.size_label : ""}`
+          : `Mesatarja në ${v.shops} dyqane: ${fmt(v.median, product.currency)}` })));
+    }
+    if (exact.length) {
+      p.append(node("h3", { text: "I njëjti produkt" + (q.size_label ? `, ${q.size_label}` : "") + (q.by_barcode ? " (sipas barkodit)" : "") }));
+      if (q.size_assumed && q.size_label)
+        p.append(node("div", { class: "note", text: `Kjo faqe nuk e shkruan madhësinë. E krahasuam me ${q.size_label}, sipas çmimit: kontrolloje te dyqani.` }));
+      const all = [...exact.slice(0, 6).map((o) => o.price), product.price].filter(Boolean);
+      const max = Math.max(...all), lo = Math.min(...exact.filter((o) => o.in_stock).map((o) => o.price));
+      // the page you're on, then the other shops, all on one scale
+      p.append(row(null, `${HOST} (kjo faqe)`, product.price, product.currency, product.price / max, product.price <= lo));
+      exact.slice(0, 6).forEach((o) => p.append(row(go(o), host(o.shop) + (o.in_stock ? "" : " · s'ka gjendje"), o.price, o.currency,
+        o.price / max, o.in_stock && o.price === lo && o.price < product.price, !o.in_stock)));
+      if (data.unconfirmed && data.item && !same.length)
+        p.append(node("div", { class: "note", text: `+${data.unconfirmed} dyqane e kanë pa shkruar madhësinë.` }));
+    } else if (!same.length) {
+      p.append(node("div", { class: "note", text: q.size_label ? `Nuk e gjetëm këtë produkt, ${q.size_label}, në dyqane të tjera.` : "Nuk e gjetëm këtë produkt në dyqane të tjera." }));
+    }
+    if (same.length) {
+      const box = node("div", { class: "alt" }, node("h3", { text: "Emër i njëjtë, madhësi tjetër ose pa e shkruar" }));
+      same.slice(0, 4).forEach((o) => box.append(row(go(o), `${host(o.shop)} · ${o.size || "pa madhësi"}`, o.price, o.currency)));
+      p.append(box);
+    }
+    if (similar.length) {
+      const box = node("div", { class: "alt" }, node("h3", { text: "Të ngjashme (jo i njëjti produkt)" }));
+      similar.slice(0, 4).forEach((o) => box.append(row(go(o), `${host(o.shop)} · ${o.title}`, o.price, o.currency)));
+      p.append(box);
+    }
+    if (dupes.length) {
+      const box = node("div", { class: "alt" }, node("h3", { text: "Dupe: produkt tjetër, bën të njëjtën punë" }));
+      dupes.slice(0, 3).forEach((d) => {
+        const r = row(`${SITE}/produkt/${encodeURIComponent(d.dupe_id)}`, d.dupe_title, d.dupe_price, "ALL");
+        if (d.reason) r.querySelector(".n").append(node("span", { class: "chip", text: d.reason }));
+        box.append(r);
+      });
+      p.append(box);
+    }
+    if (data.item) {
+      const page = `${SITE}/produkt/${encodeURIComponent(data.item)}`;
+      p.append(node("div", { class: "acts" },
+        node("a", { class: "btn pri", href: page, target: "_blank", rel: "noopener", text: "Të gjitha çmimet" }),
+        node("a", { class: "btn sec", href: `${page}#ndiq`, target: "_blank", rel: "noopener", text: "Ndiq çmimin" })));
+    }
+    const off = node("button", { text: `Mos e shfaq te ${HOST}` });
+    off.onclick = () => chrome.storage.local.set({ [`off:${HOST}`]: true }, () => { badge("", ""); el.remove(); });
+    p.append(node("div", { class: "ft" }, node("span", { text: "Çmimet e sotme nga dyqanet shqiptare" }), off));
+    return p;
+  }
+
+  function row(href, label, price, cur, share, best, out) {
+    const r = node(href ? "a" : "div", href ? { class: "row" + (best ? " best" : "") + (out ? " out" : ""), href, target: "_blank", rel: "noopener sponsored" }
+      : { class: "row" + (best ? " best" : ""), style: "display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 0;border-top:1px solid var(--line)" },
+      node("span", { class: "n", text: label }), node("span", { class: "pr", text: fmt(price, cur) }));
+    if (share) r.append(node("span", { class: "bar" }, node("i", { style: `width:${Math.max(6, Math.min(100, share * 100)).toFixed(0)}%` })));
+    return r;
   }
 
   let lastKey = "";
-  let retried = false;
   function check() {
     const p = detect();
     const key = p ? p.url + "|" + p.price : "";
     if (!p || key === lastKey) return;
     lastKey = key;
-    note("Po krahasoj çmimet në dyqanet shqiptare…");
     chrome.runtime.sendMessage({ type: "lookup", product: p }, (res) => {
-      if (res && res.ok) render(p, res.data);
-      else if (!retried) { retried = true; lastKey = ""; setTimeout(check, 20000); } // server may have been waking up
-      else note("shporta.app nuk u përgjigj. Rifresko faqen pas pak.", 8000);
+      if (chrome.runtime.lastError || !res) return;
+      if (res.ok) render(p, res.data, false);
     });
   }
 
-  check();
-  // Single-page shops (Zara, LC Waikiki...) change product without reloading.
-  setInterval(check, 2000);
+  chrome.storage.local.get(`off:${HOST}`, (v) => {
+    if (v && v[`off:${HOST}`]) return;  // the shopper chose not to see shporta on this site
+    check();
+    setInterval(check, 2000);  // single-page shops (Zara, LC Waikiki...) change product without reloading
+  });
+  // the toolbar button asks to open the panel
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === "open") { lastKey = ""; const p = detect(); if (p) chrome.runtime.sendMessage({ type: "lookup", product: p }, (res) => res && res.ok && render(p, res.data, true)); }
+  });
 })();
