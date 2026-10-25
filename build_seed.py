@@ -78,6 +78,45 @@ def price_history(src, today):
     return out
 
 
+HISTORY_DAYS = 120
+
+
+def item_history(src, rows, today, current):
+    """Per compared product, the lowest price among its shops on each day we checked (the last 120 days), stored
+    only where it changed: [["2026-10-22", 1390], ["2026-10-25", 1182], ...]. The product page draws it and says
+    whether today's price is low for this product. Only shops in the comparison, only the item's own currency."""
+    import json
+    start = (date.fromisoformat(today) - timedelta(days=HISTORY_DAYS)).isoformat()
+    item_of = {r[0]: (r[14], r[8]) for r in rows if r[16]}  # pid -> (item, currency), compared offers only
+    by_item_cur = collections.Counter(item_of.values())
+    main_cur = {}
+    for (item, cur), n in by_item_cur.items():
+        if n > main_cur.get(item, (None, 0))[1]:
+            main_cur[item] = (cur, n)
+    daily = collections.defaultdict(dict)  # item -> day -> lowest price
+    for pid, day, price in src.execute("SELECT product_id, day, price FROM prices WHERE price > 0 AND day >= ?", (start,)):
+        info = item_of.get(pid)
+        if not info or main_cur[info[0]][0] != info[1]:
+            continue
+        d = daily[info[0]]
+        d[day] = min(d.get(day, price), price)
+    out = []
+    for item, days in daily.items():
+        points, last = [], None
+        for day in sorted(days):
+            p = round(days[day], 2)
+            if p != last:
+                points.append([day, p])
+                last = p
+        # today is the price the page shows: the cheapest shop that has it in stock (a sold-out shop's lower price
+        # is in the daily rows but can't be bought)
+        if item in current:
+            points = [x for x in points if x[0] != today] + [[today, round(current[item], 2)]]
+            points = [x for i, x in enumerate(points) if i == 0 or x[1] != points[i - 1][1] or x[0] == today]
+        out.append((item, json.dumps(points, separators=(",", ":"))))
+    return out
+
+
 def main():
     OUT.parent.mkdir(exist_ok=True)
     OUT.unlink(missing_ok=True)
@@ -99,6 +138,9 @@ def main():
     """)
     shop_cat = dict(src.execute("SELECT domain, category FROM shops"))
     group_of = dict(src.execute("SELECT product_id, group_id FROM matches"))
+    # rows match.py joined by barcode: the barcode names one size, so a title that doesn't state it takes the group's
+    by_barcode = {r[0] for r in src.execute("SELECT product_id FROM matches WHERE via = 'gtin'")} \
+        if "via" in {r[1] for r in src.execute("PRAGMA table_info(matches)")} else set()
     alias = dict(src.execute("SELECT key, canonical FROM key_alias"))
     dst.execute("CREATE TABLE key_alias (key TEXT PRIMARY KEY, canonical TEXT)")
     dst.executemany("INSERT INTO key_alias VALUES (?,?)", alias.items())
@@ -134,6 +176,12 @@ def main():
         cat = cats.most_common(1)[0][0]
         for o in offs:  # a matched product gets one category for all its shops
             o[13] = cat
+        if iid.startswith("g") and by_barcode:
+            stated = {(o[11], o[12]) for o in offs if o[11] is not None}
+            if len(stated) == 1:
+                for o in offs:
+                    if o[11] is None and o[0] in by_barcode:
+                        o[11], o[12] = next(iter(stated))
         # a matched product where some shops state the size: only those are compared
         sized = [o for o in offs if o[11] is not None]
         main = sized if iid.startswith("g") and sized else offs
@@ -181,6 +229,8 @@ def main():
 
     dst.executemany(f"INSERT INTO products VALUES ({','.join('?' * len(rows[0]))})", rows)
     dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", items)
+    dst.execute("CREATE TABLE item_history (id TEXT PRIMARY KEY, h TEXT)")
+    dst.executemany("INSERT INTO item_history VALUES (?,?)", item_history(src, rows, latest[:10], {i[0]: i[6] for i in items}))
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())
     dst.executemany("INSERT INTO shops VALUES (?,?,?)",
                     src.execute("SELECT domain, category, products FROM shops WHERE status IN ('ok','error')"))

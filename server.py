@@ -34,6 +34,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import alerts
 import dupes
+import feedback
 import seo
 import stats
 from match import GENERIC, MEN_WORDS, PERFUME_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
@@ -423,24 +424,140 @@ def item(item_id):
     it["dupes"] = dupes_of(item_id)
     it["dupe_of"] = originals_of(item_id)
     it["alerts"] = alerts.enabled()  # the product page shows the email form only when emails can go out
+    it["history"] = item_history(item_id)
     return it
+
+
+# the same thing in Albanian and English, or spelled two ways: a search for one also finds the others
+SYNONYMS = [
+    {"atlete", "sneakers", "sneaker"}, {"kepuce", "shoes", "shoe"}, {"cizme", "boots"}, {"sandale", "sandals"},
+    {"canta", "cante", "bag", "bags"}, {"ore", "ora", "watch"}, {"syze", "sunglasses", "glasses"},
+    {"parfum", "parfume", "perfume", "edp", "edt"}, {"krem", "cream", "creme"}, {"shampo", "shampoo"},
+    {"fustan", "dress"}, {"xhakete", "jacket"}, {"bluze", "blouse", "shirt"}, {"pantallona", "pants", "trousers"},
+    {"telefon", "celular", "phone", "smartphone"}, {"kufje", "headphones", "earbuds", "headset"},
+    {"laptop", "notebook"}, {"televizor", "tv"}, {"karikues", "charger"}, {"lodra", "loder", "toy", "toys"},
+    {"liber", "libra", "book", "books"}, {"qen", "dog"}, {"mace", "cat"}, {"femije", "kids", "baby", "bebe"},
+    {"buzekuq", "lipstick"}, {"rimel", "mascara"}, {"pudra", "powder"}, {"vathe", "earrings"}, {"unaze", "ring"},
+    {"varese", "necklace"}, {"byzylyk", "bracelet"}, {"frigorifer", "fridge", "refrigerator"},
+    {"rrobalarese", "lavatrice"}, {"divan", "sofa"}, {"karrige", "chair"},
+]
+SYN_OF = {w: g for g in SYNONYMS for w in g}
+_vocab = None
+
+
+def vocabulary():
+    """Words of our product names that several products use: what a mistyped search word is checked against."""
+    global _vocab
+    if _vocab is None:
+        n = collections.Counter()
+        for (t,) in db().execute("SELECT search FROM items WHERE shops >= 2 OR in_stock_shops >= 1"):
+            n.update(set(re.findall(r"[a-z0-9]{4,}", t)))
+        _vocab = {w: c for w, c in n.items() if c >= 3}
+    return _vocab
+
+
+threading.Thread(target=vocabulary, daemon=True).start()  # ready before the first mistyped search
+
+
+def search_items(words, limit):
+    """Items whose names contain every word (or one of its synonyms), best matches first: the most query words
+    found as whole words in the name, then sold by more shops, then in stock, then cheaper."""
+    where, args, long_args, long_parts = [], [], [], []
+    for w in words:
+        alts = sorted(SYN_OF.get(w, {w}) | {w})
+        where.append("(" + " OR ".join("search LIKE ?" for _ in alts) + ")")
+        args += [f"%{a}%" for a in alts]
+        if HAS_ITEM_SEARCH and all(len(a) >= 3 for a in alts):
+            # the trigram index answers one LIKE at a time quickly, an OR of them slowly: one lookup per synonym,
+            # UNION for a word's synonyms, INTERSECT across words. The LIKEs on items stay the rule.
+            long_parts.append(" UNION ".join("SELECT rowid FROM item_search WHERE search LIKE ?" for _ in alts))
+            long_args += [f"%{a}%" for a in alts]
+    sql_where = " AND ".join(where)
+    if long_parts:
+        sql_where = f"rowid IN ({' INTERSECT '.join(long_parts)}) AND {sql_where}"
+        args = long_args + args
+    total = db().execute(f"SELECT COUNT(*) FROM items WHERE {sql_where}", args).fetchone()[0]
+    cand = item_rows(f"""SELECT {ITEM_COLS}, search FROM items WHERE {sql_where}
+                         ORDER BY shops DESC, in_stock_shops DESC, min_price LIMIT 800""", args)
+
+    def score(it):
+        title = fold(it["title"])
+        whole = sum(1 for w in words if any(re.search(rf"\b{re.escape(a)}\b", title) for a in SYN_OF.get(w, {w}) | {w}))
+        starts = 1 if title.startswith(words[0]) else 0
+        return (-whole, -starts, -min(it["shops"], 5), -bool(it["in_stock_shops"]), it["min_price"])
+    cand.sort(key=score)
+    for it in cand:
+        it.pop("search", None)
+    return total, cand[:limit]
+
+
+def correct(words):
+    """A mistyped word ("cerave" typed "cereve", "parfume" typed "parfumm") -> the closest word in our names."""
+    import difflib
+    vocab, out, changed = vocabulary(), [], False
+    for w in words:
+        table = "item_search" if HAS_ITEM_SEARCH else "items"
+        if len(w) < 4 or w in SYN_OF or db().execute(f"SELECT 1 FROM {table} WHERE search LIKE ? LIMIT 1", (f"%{w}%",)).fetchone():
+            out.append(w)
+            continue
+        if w in vocab:
+            out.append(w)
+            continue
+        near = difflib.get_close_matches(w, [v for v in vocab if abs(len(v) - len(w)) <= 2 and v[0] == w[0]], n=6, cutoff=0.75)
+        # among close spellings, the word most of our products use ("nivae" -> "nivea", not "niva")
+        best = max(near, key=lambda v: (difflib.SequenceMatcher(None, w, v).ratio() >= 0.8, vocab[v]), default=None)
+        out.append(best or w)
+        changed |= bool(best)
+    return out if changed else None
 
 
 def search(q, page=0):
     words = [w for w in re.findall(r"[^\W_]+", fold(q)) if len(w) > 1][:6]  # no "_": it's a LIKE wildcard
     if not words:
         return {"q": q, "total": 0, "items": []}
-    where = " AND ".join("search LIKE ?" for _ in words)
-    args = [f"%{w}%" for w in words]
-    long = [w for w in words if len(w) >= 3]  # the trigram index narrows the items, the LIKEs above stay the rule
-    if long and HAS_ITEM_SEARCH:
-        where = f"rowid IN (SELECT rowid FROM item_search WHERE {' AND '.join('search LIKE ?' for _ in long)}) AND {where}"
-        args = [f"%{w}%" for w in long] + args
-    total = db().execute(f"SELECT COUNT(*) FROM items WHERE {where}", args).fetchone()[0]
-    items = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE {where}
-                          ORDER BY shops DESC, in_stock_shops DESC, min_price LIMIT ? OFFSET ?""",
-                      args + [PAGE_SIZE, page * PAGE_SIZE])
-    return {"q": q, "total": total, "page": page, "page_size": PAGE_SIZE, "items": items}
+    total, items = search_items(words, (page + 1) * PAGE_SIZE)
+    fixed = None
+    if total < 3 and (fixed := correct(words)):  # nothing or almost nothing: a typo? use the spelling that finds more
+        t2, i2 = search_items(fixed, (page + 1) * PAGE_SIZE)
+        if t2 > total:
+            total, items = t2, i2
+        else:
+            fixed = None
+    return {"q": q, "total": total, "page": page, "page_size": PAGE_SIZE, "items": items[page * PAGE_SIZE:],
+            "corrected": " ".join(fixed) if fixed and total else None}
+
+
+def suggest(q):
+    """As someone types: up to 7 products with a photo and the price range, the best matches first."""
+    words = [w for w in re.findall(r"[^\W_]+", fold(q)) if len(w) > 1][:6]
+    if not words or len("".join(words)) < 3:
+        return {"items": []}
+    total, items = search_items(words, 7)
+    if total < 3 and (fixed := correct(words)):
+        t2, i2 = search_items(fixed, 7)
+        if t2 > total:
+            total, items = t2, i2
+    return {"total": total, "items": items}
+
+
+def basket(ids):
+    """"Shporta ime": for each product, every shop that has it in stock at its lowest price (one per shop, the
+    product's own currency, exact comparison only). app.js works out the cheapest way to buy them all."""
+    ids = [i for i in dict.fromkeys(ids.split(",")) if re.fullmatch(r"[\w-]{1,20}", i)][:40]
+    out = []
+    for iid in ids:
+        rows = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id = ?", (iid,))
+        if not rows:
+            out.append({"id": iid, "missing": True})
+            continue
+        it = rows[0]
+        offs = [o for o in offers_for(iid) if o["in_stock"] and o["currency"] == it["currency"]]
+        best = {}
+        for o in offs:
+            if o["shop"] not in best or o["price"] < best[o["shop"]]["price"]:
+                best[o["shop"]] = {"shop": o["shop"], "price": o["price"], "id": o["id"]}
+        out.append({**it, "offers": sorted(best.values(), key=lambda o: o["price"])})
+    return {"items": out}
 
 
 def alert_item(item_id):
@@ -465,6 +582,14 @@ def alert_page(path, q):
         h, p = ("Njoftimi u ndal", f"Nuk do të të shkruajmë më për {r['title']}.") if r else                ("Njoftimi është ndalur tashmë", "Ky produkt nuk ka më njoftim aktiv.")
     return seo.page_html(f"{h} | shporta", p, path, f'<div class="wrap page-head"><h1>{seo.e(h)}</h1><p>{seo.e(p)}</p>'
                          f'<p><a class="btn" href="/">Kthehu te shporta</a></p></div>', robots="noindex,nofollow")
+
+
+def item_history(item_id):
+    try:
+        r = db().execute("SELECT h FROM item_history WHERE id = ?", (item_id,)).fetchone()
+    except sqlite3.OperationalError:  # a data file from before the history
+        return []
+    return json.loads(r[0]) if r else []
 
 
 def items_by_ids(ids):
@@ -784,12 +909,16 @@ def stats_page(data):
     bots = "".join(f"<tr><td>{e(b)}<td>{n}<td>{e(last)}" for b, n, last in data.get("crawlers", []))
     shops = "".join(f"<tr><td>{e(s.removeprefix('www.'))}<td>{n}<td>{v}<td>{e((src or '').replace(',', ', '))}"
                     for s, n, v, src in data.get("shops", []))
+    reports = "".join(f"<tr><td>{e(d)}<td><a href='/produkt/{e(i)}'>{e(i)}</a><td>{e(o)}<td>{e(k)}<td>{e(n)}<td>{c}"
+                      for d, i, o, k, n, c in feedback.summary())
     return f"""<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Statistika | shporta</title>
 <style>body{{font:15px system-ui;margin:24px;max-width:960px}}table{{border-collapse:collapse;margin:8px 0 28px}}
 td,th{{border-bottom:1px solid #ddd;padding:5px 10px;text-align:right}}td:first-child,th:first-child{{text-align:left}}</style>
 <h1>Statistika e shportës (30 ditët e fundit)</h1>
 <p>Pa cookies dhe pa ruajtur adresa: një vizitor numërohet një herë në ditë. Robotët e kërkimit dhe të AI-së numërohen veçmas.</p>
 <table><tr><th>Dita{"".join(f"<th>{names[k]}" for k in kinds)}{rows}</table>
+<h2>Raportimet e gabimeve</h2><p>Një listim del nga krahasimi kur 3 vizitorë të ndryshëm thonë që është produkt ose madhësi tjetër.</p>
+<table><tr><th>Dita<th>Produkti<th>Listimi<th>Arsyeja<th>Shënim<th>Sa herë{reports or "<tr><td>Ende asnjë"}</table>
 <h2>Klikime te çdo dyqan</h2><p>Kjo është prova që u tregojmë dyqaneve: sa vizitorë u dërgojmë (çdo link ka utm_source=shporta).</p>
 <table><tr><th>Dyqani<th>Klikime<th>Vizitorë<th>Nga faqja{shops or "<tr><td>Ende asnjë"}</table>
 <h2>Nga erdhën vizitorët</h2><table><tr><th>Faqja<th>Vizita{refs or "<tr><td>Ende asnjë"}</table>
@@ -869,6 +998,10 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/njoftim/konfirmo", "/njoftim/ndalo"):
                 self.noindex = True
                 return self._send(200, alert_page(path, q).encode(), "text/html; charset=utf-8", cache="no-store")
+            if path == "/api/suggest":
+                return self._send(200, suggest(q.get("q", "")[:100]), cache="public, max-age=300")
+            if path == "/api/basket":
+                return self._send(200, basket(q.get("ids", "")))
             if path == "/api/items":
                 return self._send(200, items_by_ids(q.get("ids", "")))
             if path == "/api/dupes":
@@ -949,7 +1082,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/njoftim/ndalo":  # Gmail's own "unsubscribe" button (List-Unsubscribe-Post): stop every alert
             alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])
             return self._send(200, {"ok": True})
-        if path not in ("/api/lookup", "/api/alert"):
+        if path not in ("/api/lookup", "/api/alert", "/api/feedback"):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -958,6 +1091,13 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(n) or b"{}")
             if not isinstance(data, dict):
                 raise ValueError("expected an object")
+            if path == "/api/feedback":  # "Raporto gabim" on a product page (feedback.py)
+                ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+                offer = data.get("offer")
+                offer = int(offer) if str(offer or "").isdigit() else None
+                code, msg = feedback.record(str(data.get("kind", ""))[:20], str(data.get("item", ""))[:20], offer,
+                                            str(data.get("note", ""))[:300], ip, self.headers.get("User-Agent", ""))
+                return self._send(code, {"message": msg} if code == 200 else {"error": msg})
             if path == "/api/alert":  # "email me when it gets cheaper" on a product page (alerts.py)
                 ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
                 code, msg = alerts.subscribe(str(data.get("email", ""))[:254], str(data.get("item", ""))[:20], ip, alert_item)

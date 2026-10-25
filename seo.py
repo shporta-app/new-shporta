@@ -19,7 +19,7 @@ OG_IMAGE = BASE + "/assets/og.png"
 INDEXNOW_KEY = "029f48a586fe6c2bf319e1539d1d11dd"  # served at /<key>.txt; nightly.py tells Bing/Yandex what changed
 SITEMAP_CHUNK = 10000
 NAME = "shporta"
-TAGLINE = "Krahaso çmimet e kozmetikës, parfumeve dhe modës në dyqanet online shqiptare"
+TAGLINE = "Krahaso çmimet e të njëjtit produkt në dyqanet online shqiptare"
 
 e = html.escape
 
@@ -92,7 +92,7 @@ def home(srv):
     body = f"""<div class="wrap">
 <h1>shporta: krahaso çmimet në dyqanet online shqiptare</h1>
 <p>I njëjti produkt, në të njëjtën madhësi, kushton ndryshe në dyqane të ndryshme. shporta krahason çdo ditë
-{num(s['offers'])} çmime nga {s['shops']} dyqane online në Shqipëri: kozmetikë, parfume, grim, flokë, veshje, këpucë, syze, ora dhe bizhuteri.
+{num(s['offers'])} çmime nga {s['shops']} dyqane online në Shqipëri: kozmetikë, parfume, veshje, këpucë, syze, ora, teknologji, elektroshtëpiake, shtëpi e kuzhinë, libra, fëmijë, shëndet, kafshë dhe auto.
 {num(s['compared'])} produkte i gjejmë në dy ose më shumë dyqane.</p>{fact}
 <form action="/kerko" role="search"><label>Kërko produkt ose markë <input name="q" type="search"></label></form>
 <h2>Kategoritë</h2><ul>{cats}</ul>
@@ -106,9 +106,9 @@ def home(srv):
             "inLanguage": "sq", "publisher": {"@id": BASE + "/#org"}, "description": TAGLINE + ".",
             "potentialAction": {"@type": "SearchAction", "target": {"@type": "EntryPoint", "urlTemplate": BASE + "/kerko?q={search_term_string}"},
                                 "query-input": "required name=search_term_string"}}
-    desc = (f"Krahaso çmimet e të njëjtit produkt në {s['shops']} dyqane online shqiptare: kozmetikë, parfume, veshje, këpucë "
-            f"dhe aksesorë. Gjej ku kushton më lirë sot. Falas, çdo ditë.")
-    return 200, page_html("shporta: krahaso çmimet e kozmetikës, parfumeve dhe modës në Shqipëri", desc, "/", body, data=[org, site])
+    desc = (f"Krahaso çmimet e të njëjtit produkt në {s['shops']} dyqane online shqiptare: kozmetikë, parfume, veshje, "
+            f"teknologji, shtëpi, libra dhe më shumë. Gjej ku kushton më lirë sot. Falas, çdo ditë.")
+    return 200, page_html("shporta: krahaso çmimet në dyqanet online të Shqipërisë", desc, "/", body, data=[org, site])
 
 
 def with_size(title, size):
@@ -312,6 +312,8 @@ STATIC = {  # pages app.js draws itself; the server gives them a title, descript
     "/privatesia": ("Cookies dhe privatësia | shporta", "Çfarë ruan shporta dhe pse.", "Cookies dhe privatësia", "index,follow"),
     "/ndaj": ("Krahaso një link | shporta", "Ngjit ose ndaj linkun e një produkti nga një dyqan online dhe shiko ku kushton më lirë.",
               "Krahaso një link", "noindex,follow"),
+    "/shporta": ("Shporta ime | shporta", "Shto disa produkte dhe shiko ku t'i blesh që të paguash më pak, te një dyqan ose në dy.",
+                 "Shporta ime", "noindex,follow"),
     "/lista": ("Produktet që ndjek | shporta", "Produktet që ruajte në këtë shfletues dhe sa ka ndryshuar çmimi që kur i ruajte.",
                "Produktet që ndjek", "noindex,follow"),
     "/kerko": ("Kërko | shporta", "Kërko një produkt ose markë në dyqanet online shqiptare.", "Kërko", "noindex,follow"),
@@ -360,7 +362,7 @@ AI_BOTS = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-Searc
 
 
 def robots_txt():
-    rules = "Allow: /\nDisallow: /go/\nDisallow: /api/\nDisallow: /kerko\nDisallow: /ndaj\nDisallow: /lista\nDisallow: /njoftim/\n"
+    rules = "Allow: /\nDisallow: /go/\nDisallow: /api/\nDisallow: /kerko\nDisallow: /ndaj\nDisallow: /lista\nDisallow: /shporta\nDisallow: /njoftim/\n"
     named = "".join(f"User-agent: {b}\n" for b in AI_BOTS)
     return (f"# shporta.app: price comparison for Albanian online shops. Search engines and AI assistants are welcome.\n"
             f"User-agent: *\n{rules}\n{named}{rules}\nSitemap: {BASE}/sitemap.xml\n")
@@ -414,7 +416,7 @@ def llms_txt(srv):
     updated = s.get("updated") or ""
     return f"""# shporta
 
-> shporta.app is a free price comparison website for Albania. Every day it collects the prices that Albanian online shops publish for cosmetics, skincare, perfume, makeup, haircare, clothing, shoes, eyewear, watches, jewellery and baby products, finds the exact same product in the same size across shops, and shows where it is cheapest today. Prices are in Albanian lek (ALL). shporta does not sell anything; every price links to the shop.
+> shporta.app is a free price comparison website for Albania. Every day it collects the prices that Albanian online shops publish (cosmetics, perfume, clothing, shoes, eyewear, watches, jewellery, electronics, home appliances, home and kitchen, books, toys and baby, health and supplements, pets, car parts), finds the exact same product in the same size across shops, and shows where it is cheapest today. Prices are in Albanian lek (ALL). shporta does not sell anything; every price links to the shop.
 
 Key facts (updated {updated[:10]}):
 - {num(s['offers'])} prices from {s['shops']} Albanian online shops; {num(s['compared'])} products found in two or more shops.

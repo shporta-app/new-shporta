@@ -235,7 +235,7 @@ async function pageHome() {
   <section class="hero"><div class="wrap hero-in">
     <div>
       <h1>i njëjti produkt, çmime të ndryshme</h1>
-      <p>Shiko sa kushton një produkt në çdo dyqan online në Shqipëri, para se ta blesh. Kozmetikë, parfume, veshje, këpucë dhe aksesorë.</p>
+      <p>Shiko sa kushton një produkt në çdo dyqan online në Shqipëri, para se ta blesh. Kozmetikë, parfume, veshje, teknologji, shtëpi, libra, lodra dhe më shumë.</p>
       ${searchForm("q-hero")}
       <div class="hero-stats">
         <span><b class="num">${s.offers.toLocaleString("en").replace(/,/g, " ")}</b>çmime</span>
@@ -395,7 +395,10 @@ async function pageItem(id) {
           <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
         </div>
         ${story}
-        <p class="watch"><button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
+        ${multiShop || (it.history || []).length > 1 ? (() => { const v = priceVerdict(it.history || [], lo);
+          return `<div class="verdict ${v.kind}"><p>${v.text}</p>${priceChart(it.history || [], it.currency)}</div>`; })() : ""}
+        <p class="watch"><button type="button" class="btn" id="basket-add" aria-pressed="${inBasket(it.id)}"></button>
+          <button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
           <small>Ruhet vetëm në këtë shfletues. Kur rihap shportën, të tregojmë nëse çmimi ra.</small></p>
         ${it.alerts ? `<form class="alert-form" id="alert-form">
           <label for="alert-email">Më njofto me email kur bie çmimi</label>
@@ -411,10 +414,12 @@ async function pageItem(id) {
         ${unconfirmed ? `<h2 class="sub">edhe këto dyqane e kanë, pa e shkruar madhësinë</h2>
           <p class="note">Nuk i krahasojmë dhe nuk i numërojmë te më i liri, sepse nuk e dimë nëse është ${it.size ? esc(it.size) : "e njëjta madhësi"}. Kontrollo madhësinë te dyqani.</p>
           <table class="offers unconfirmed"><tbody>${unconfirmed}</tbody></table>` : ""}
+        ${unitValue(it)}
         <p class="note">${multiShop
           ? "Krahasojmë vetëm të njëjtin produkt: i njëjti emër, e njëjta markë dhe e njëjta madhësi. Emri i saktë te çdo dyqan është poshtë çmimit, që ta kontrollosh vetë."
           : "Këtë produkt e gjetëm vetëm në këtë dyqan. Më poshtë ke produkte të ngjashme nga dyqane të tjera."}
-          ${it.tracked_since ? ` Çmimet i kontrollojmë çdo ditë që nga ${dateSq(it.tracked_since + "T12:00:00")}.` : ""}</p>
+          ${it.tracked_since ? ` Çmimet i kontrollojmë çdo ditë që nga ${dateSq(it.tracked_since + "T12:00:00")}.` : ""}
+          <button type="button" class="linkish" id="report-open">Raporto gabim</button></p>
       </div>
     </div>
     ${it.dupes && it.dupes.length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2>
@@ -428,6 +433,12 @@ async function pageItem(id) {
     ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Emër i ngjashëm: nuk e konfirmojmë që është i njëjti produkt. Nga dyqane të tjera, më të lirat së pari.</p>
       <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
   </div>`;
+  const bb = document.getElementById("basket-add");
+  const blabel = () => { bb.textContent = inBasket(it.id) ? "Në shportë ✓" : "Shto në shportë"; bb.setAttribute("aria-pressed", inBasket(it.id)); };
+  blabel();
+  bb.onclick = () => { basketToggle(it.id); blabel(); };
+  document.getElementById("report-open").onclick = () => reportDialog(it);
+  wireChart(main);
   const btn = document.getElementById("watch");
   const label = () => { btn.textContent = watching(it.id) ? "E ndjek ✓ (hiqe)" : "Ndiq çmimin"; btn.setAttribute("aria-pressed", watching(it.id)); };
   label();
@@ -553,7 +564,7 @@ async function pageSearch(params) {
   const d = await api(`/api/search?${q}`);
   document.title = `${term}: kërkimi | shporta`;
   main.innerHTML = `<div class="wrap">
-    <div class="page-head"><h1>${esc(term)}</h1><p>${plural(d.total, "produkt", "produkte")}. Ato në më shumë dyqane dalin të parat.</p></div>
+    <div class="page-head"><h1>${esc(term)}</h1><p>${d.corrected ? `Treguam rezultatet për <b>${esc(d.corrected)}</b>. ` : ""}${plural(d.total, "produkt", "produkte")}. Më të përshtatshmit dalin të parët.</p></div>
     <div style="height:22px"></div>
     ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
       : `<div class="empty"><b>Nuk gjetëm "${esc(term)}".</b>Provo një fjalë më të shkurtër, emrin e markës, ose shkruaje pa ë dhe ç.</div>`}
@@ -704,6 +715,10 @@ function pagePrivacy() {
     <p>Për çdo faqe që hap numërojmë llojin e faqes, ditën dhe faqen nga erdhe (p.sh. google.com). Që një vizitor të numërohet
       vetëm një herë në ditë, përdorim një kod të përkohshëm të krijuar nga adresa dhe shfletuesi yt bashkë me një çelës që
       ndryshon çdo ditë dhe fshihet. Adresën (IP) nuk e ruajmë, dhe të nesërmen kodi nuk mund të lidhet më me ty.</p>
+    <h2>Shporta ime</h2>
+    <p>Produktet që shton në shportë ruhen vetëm në këtë shfletues. Për të llogaritur ku t'i blesh, shfletuesi na kërkon vetëm çmimet e sotme për ato produkte.</p>
+    <h2>Raportimet e gabimeve</h2>
+    <p>Kur raporton një gabim, ruajmë produktin, dyqanin, arsyen, shënimin tënd dhe të njëjtin kod ditor si te statistikat (pa adresë, pa cookie).</p>
     <h2>Kursimet e mia</h2>
     <p>Kur kalon nga shporta te një dyqan, ky shfletues shënon produktin, çmimin dhe sa më pak kërkon ai dyqan se më i shtrenjti,
       që te "Lista ime" të shohësh kursimin e mundshëm. Ruhet vetëm në shfletuesin tënd (localStorage) dhe nuk na dërgohet kurrë.</p>
@@ -770,6 +785,286 @@ async function pageAbout() {
   document.title = "Si funksionon shporta: krahasimi i çmimeve në Shqipëri | shporta";
 }
 
+/* ---------- "Shporta ime": several products, the cheapest way to buy them all ---------- */
+// Kept in this browser only. The optimizer is plain arithmetic on today's prices: every product at its cheapest
+// shop, everything at one shop, or split between two shops. Delivery costs are not in our data, so we say so.
+const BASKET_KEY = "shporta-basket";
+const basketList = () => { try { return JSON.parse(localStorage.getItem(BASKET_KEY)) || []; } catch { return []; } };
+const basketSave = (l) => { try { localStorage.setItem(BASKET_KEY, JSON.stringify(l.slice(0, 40))); } catch {} basketBadge(); };
+const inBasket = (id) => basketList().some((b) => b.id === id);
+function basketToggle(id) {
+  const l = basketList();
+  basketSave(l.some((b) => b.id === id) ? l.filter((b) => b.id !== id) : [...l, { id, qty: 1 }]);
+  return inBasket(id);
+}
+function basketBadge() {
+  const a = document.getElementById("nav-basket");
+  if (!a) return;
+  const n = basketList().reduce((t, b) => t + b.qty, 0);
+  a.querySelector("span").textContent = n ? n : "";
+  a.classList.toggle("has", n > 0);
+}
+
+// items: [{id, title, qty, offers: [{shop, price}]}] -> the plans worth showing, cheapest first
+function basketPlans(items) {
+  const avail = items.filter((i) => i.offers && i.offers.length);
+  if (!avail.length) return null;
+  const shops = [...new Set(avail.flatMap((i) => i.offers.map((o) => o.shop)))];
+  const priceAt = (it, shop) => (it.offers.find((o) => o.shop === shop) || {}).price;
+  const plan = (pick) => {  // pick(item) -> offer or null
+    const lines = avail.map((it) => ({ it, o: pick(it) }));
+    const got = lines.filter((l) => l.o);
+    return { lines, total: got.reduce((t, l) => t + l.o.price * l.it.qty, 0), missing: lines.filter((l) => !l.o).map((l) => l.it),
+             shops: [...new Set(got.map((l) => l.o.shop))] };
+  };
+  const cheapest = plan((it) => it.offers[0]);
+  const dearest = avail.reduce((t, it) => t + Math.max(...it.offers.map((o) => o.price)) * it.qty, 0);
+  // one shop: the shop that has the most of them, then the lowest total
+  let one = null;
+  for (const s of shops) {
+    const p = plan((it) => it.offers.find((o) => o.shop === s) || null);
+    if (!one || p.missing.length < one.missing.length || (p.missing.length === one.missing.length && p.total < one.total)) one = p;
+  }
+  // two shops: every pair, each product at the cheaper of the two
+  let two = null;
+  if (shops.length <= 60) {
+    for (let a = 0; a < shops.length; a++) for (let b = a + 1; b < shops.length; b++) {
+      const p = plan((it) => {
+        const x = priceAt(it, shops[a]), y = priceAt(it, shops[b]);
+        if (x == null && y == null) return null;
+        return y == null || (x != null && x <= y) ? { shop: shops[a], price: x } : { shop: shops[b], price: y };
+      });
+      if (!two || p.missing.length < two.missing.length || (p.missing.length === two.missing.length && p.total < two.total)) two = p;
+    }
+  }
+  return { cheapest, one, two: two && two.shops.length === 2 ? two : null, dearest, count: avail.length };
+}
+
+async function pageBasket() {
+  document.title = "Shporta ime | shporta";
+  const l = basketList();
+  if (!l.length) {
+    main.innerHTML = `<div class="wrap"><div class="page-head"><h1>shporta ime</h1>
+      <p>Shto disa produkte dhe shporta llogarit ku t'i blesh që të paguash më pak: të gjitha te një dyqan, të ndara në dy dyqane, ose secilin te më i liri.</p></div>
+      <div class="empty"><b>Shporta është bosh.</b>Hap një produkt dhe shtyp "Shto në shportë".</div></div>`;
+    return;
+  }
+  const d = await api(`/api/basket?ids=${l.map((b) => encodeURIComponent(b.id)).join(",")}`);
+  const qty = Object.fromEntries(l.map((b) => [b.id, b.qty]));
+  const items = d.items.map((i) => ({ ...i, qty: qty[i.id] || 1 }));
+  const plans = basketPlans(items);
+  const planBox = (p, title, note, cls = "") => !p ? "" : `<div class="plan ${cls}">
+      <div class="plan-head"><h3>${title}</h3><b class="num">${lek(p.total)}</b></div>
+      <p class="note">${note}${p.missing.length ? ` Mungon: ${p.missing.map((m) => esc(m.title)).join(", ")}.` : ""}</p>
+      <ul>${p.lines.filter((x) => x.o).map((x) => `<li><span>${esc(x.it.title)}${x.it.qty > 1 ? ` × ${x.it.qty}` : ""}</span>
+        <span class="plan-shop">${esc(shopName(x.o.shop))}</span><span class="num">${lek(x.o.price * x.it.qty)}</span></li>`).join("")}</ul>
+    </div>`;
+  const best = plans && plans.cheapest;
+  main.innerHTML = `<div class="wrap basket">
+    <div class="page-head"><h1>shporta ime</h1>
+      <p>${plural(items.length, "produkt", "produkte")}. Çmimet e sotme në stok, vetëm i njëjti produkt në të njëjtën madhësi.</p></div>
+    ${plans ? `<section class="basket-sum">
+      <div><small>Po t'i blesh te dyqanet më të shtrenjta</small><s class="num">${lek(plans.dearest)}</s></div>
+      <div class="win"><small>Me shportën paguan</small><b class="num">${lek(best.total)}</b></div>
+      <div><small>Kursen</small><b class="num save">${lek(plans.dearest - best.total)}</b></div>
+    </section>
+    <div class="plans">
+      ${planBox(plans.cheapest, "Secili te dyqani më i lirë", `${plural(plans.cheapest.shops.length, "dyqan", "dyqane")}: çmimi më i ulët për çdo produkt.`, "best")}
+      ${plans.two && plans.two.shops.length < plans.cheapest.shops.length ? planBox(plans.two, "Vetëm dy dyqane",
+        `${esc(plans.two.shops.map(shopName).join(" dhe "))}: më pak porosi, ${lek(plans.two.total - best.total)} më shumë se më i liri.`) : ""}
+      ${plans.one && plans.cheapest.shops.length > 1 ? planBox(plans.one, plans.one.missing.length
+          ? `${plans.count - plans.one.missing.length} nga ${plans.count} te ${esc(shopName(plans.one.shops[0] || ""))}`
+          : `Gjithçka te ${esc(shopName(plans.one.shops[0] || ""))}`,
+        `Një porosi e vetme${plans.one.missing.length ? "" : `, ${lek(plans.one.total - best.total)} më shumë se më i liri`}.`) : ""}
+    </div>
+    <p class="note">Pa kostot e transportit, që nuk i kemi: shumë dyqane e dërgojnë falas mbi një shumë. Kontrollo çmimin te dyqani para se të blesh.</p>` : ""}
+    <h2 class="sub">produktet</h2>
+    <ul class="basket-list">${items.map((it) => `<li>
+      ${it.missing ? `<span>Ky produkt nuk gjendet më.</span>` : `<a href="/produkt/${esc(it.id)}" data-link>${img(it.image, it.title)}<span><b>${esc(it.title)}</b>
+        ${it.size ? `<small>${esc(it.size)}</small>` : ""}<small>${it.offers.length ? `nga ${lek(it.offers[0].price)} te ${esc(shopName(it.offers[0].shop))}` : "S'ka gjendje askund sot"}</small></span></a>`}
+      <span class="qty"><button type="button" data-q="-1" data-id="${esc(it.id)}" aria-label="Një më pak">−</button><b>${it.qty}</b>
+        <button type="button" data-q="1" data-id="${esc(it.id)}" aria-label="Një më shumë">+</button></span>
+      <button type="button" class="btn btn-ghost" data-rm="${esc(it.id)}">Hiqe</button></li>`).join("")}</ul>
+  </div>`;
+  main.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => {
+    const l2 = basketList().map((x) => x.id === b.dataset.id ? { ...x, qty: Math.max(1, Math.min(20, x.qty + Number(b.dataset.q))) } : x);
+    basketSave(l2); pageBasket();
+  }));
+  main.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => { basketSave(basketList().filter((x) => x.id !== b.dataset.rm)); pageBasket(); }));
+}
+
+/* ---------- the price over time, and whether today's is low ---------- */
+// history: [[day, lowest price that day], ...] only where it changed (build_seed.item_history)
+function expandDays(h) {
+  const out = [];
+  for (let i = 0; i < h.length; i++) {
+    const end = i + 1 < h.length ? new Date(h[i + 1][0] + "T12:00:00") : new Date(h[i][0] + "T12:00:00");
+    for (let d = new Date(h[i][0] + "T12:00:00"); d <= end; d.setDate(d.getDate() + 1)) {
+      if (i + 1 < h.length && d.getTime() === end.getTime()) break;
+      out.push([d.toISOString().slice(0, 10), h[i][1]]);
+    }
+  }
+  return out;
+}
+function priceVerdict(h, now) {
+  const days = expandDays(h);
+  if (days.length < 14) return { kind: "early", text: `Po mbledhim historinë e çmimit: ${plural(days.length, "ditë", "ditë")} deri tani. Pas dy javësh të themi nëse çmimi i sotëm është i ulët.` };
+  const prices = days.map((d) => d[1]).sort((a, b) => a - b);
+  const low = prices[0], med = prices[Math.floor(prices.length / 2)];
+  if (now <= low * 1.005) return { kind: "low", text: `Çmimi më i ulët që kemi parë në ${days.length} ditë. Koha e mirë për ta blerë.` };
+  if (now > med * 1.05) return { kind: "high", text: `Më shtrenjtë se zakonisht: në ${days.length} ditët e fundit kushtoi zakonisht ${lek(med)}, më lirë ${lek(low)}. Mund t'ia vlejë të presësh, ose ndiqe çmimin.` };
+  return { kind: "normal", text: `Çmim i zakonshëm: në ${days.length} ditët e fundit ishte ${lek(low)} deri ${lek(prices[prices.length - 1])}.` };
+}
+function priceChart(h, cur) {
+  const days = expandDays(h);
+  if (days.length < 2) return "";
+  const ps = days.map((d) => d[1]), lo = Math.min(...ps), hi = Math.max(...ps), span = hi - lo || hi * 0.1 || 1;
+  const W = 640, H = hi === lo ? 70 : 170, P = 26;  // a price that never moved: a short line, not a tall empty box
+  const x = (i) => P + (i / (days.length - 1)) * (W - 2 * P);
+  const y = (p) => H - P - ((p - lo) / span) * (H - 2 * P);
+  let path = `M${x(0)},${y(ps[0])}`;
+  for (let i = 1; i < ps.length; i++) path += ` H${x(i)} V${y(ps[i])}`;  // steps: a price holds until it changes
+  const area = `${path} V${H - P} H${x(0)} Z`;
+  return `<figure class="chart" data-days='${esc(JSON.stringify(days))}'>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Çmimi më i ulët çdo ditë, nga ${lek(lo, cur)} deri ${lek(hi, cur)}">
+      <path class="area" d="${area}"/><path class="line" d="${path}"/>
+      <line class="lo" x1="${P}" x2="${W - P}" y1="${y(lo)}" y2="${y(lo)}"/>
+      <text x="${W - P}" y="${y(lo) - 6}" text-anchor="end">më i ulëti ${lek(lo, cur)}</text>
+      <circle class="today" cx="${x(ps.length - 1)}" cy="${y(ps[ps.length - 1])}" r="5"/>
+      <g class="hover" visibility="hidden"><line y1="${P / 2}" y2="${H - P}"/><circle r="4"/></g>
+    </svg>
+    <figcaption><span>${day(days[0][0])}</span><output></output><span>sot</span></figcaption>
+  </figure>`;
+}
+function wireChart(root) {
+  const f = root.querySelector(".chart");
+  if (!f) return;
+  const days = JSON.parse(f.dataset.days), svg = f.querySelector("svg"), g = svg.querySelector(".hover"), out = f.querySelector("output");
+  const W = 640, P = 26;
+  svg.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.round(((e.clientX - r.left) / r.width * W - P) / (W - 2 * P) * (days.length - 1));
+    const k = Math.max(0, Math.min(days.length - 1, i));
+    const cx = P + (k / Math.max(1, days.length - 1)) * (W - 2 * P);
+    const c = svg.querySelectorAll("circle.today")[0];
+    const ps = days.map((d) => d[1]), lo = Math.min(...ps), span = Math.max(...ps) - lo || Math.max(...ps) * 0.1 || 1;
+    const H = Number(svg.getAttribute("viewBox").split(" ")[3]);
+    const cy = H - P - ((days[k][1] - lo) / span) * (H - 2 * P);
+    g.setAttribute("visibility", "visible");
+    g.querySelector("line").setAttribute("x1", cx); g.querySelector("line").setAttribute("x2", cx);
+    g.querySelector("circle").setAttribute("cx", cx); g.querySelector("circle").setAttribute("cy", cy);
+    out.textContent = `${day(days[k][0])}: ${lek(days[k][1])}`;
+    c.style.opacity = 0.35;
+  });
+  svg.addEventListener("pointerleave", () => { g.setAttribute("visibility", "hidden"); out.textContent = ""; svg.querySelector("circle.today").style.opacity = 1; });
+}
+
+/* ---------- which size is the better deal ---------- */
+function unitValue(it) {
+  const parse = (x) => { const m = /^([\d.]+)\s*(ml|g|copë)$/.exec(x.size || ""); return m ? { n: Number(m[1]), u: m[2] } : null; };
+  const rows = [it, ...(it.other_sizes || [])].filter((x) => x.currency === it.currency && parse(x) && x.min_price > 0)
+    .map((x) => { const s = parse(x); return { ...x, s, per: x.min_price / s.n * (s.u === "copë" ? 1 : 100) }; });
+  const unit = rows.length && rows[0].s.u;
+  const same = rows.filter((r) => r.s.u === unit);
+  if (same.length < 2) return "";
+  const best = Math.min(...same.map((r) => r.per));
+  const label = unit === "copë" ? "për copë" : `për 100 ${unit}`;
+  return `<section class="unit"><h2 class="sub">cila madhësi ia vlen</h2>
+    <p class="note">Çmimi më i lirë i secilës madhësi, ${label}. Madhësitë e tjera nuk hyjnë te krahasimi më sipër.</p>
+    <ul>${same.sort((a, b) => a.s.n - b.s.n).map((r) => `<li class="${r.per === best ? "best" : ""}">
+      ${r.id === it.id ? `<b>${esc(r.size)}</b>` : `<a href="/produkt/${esc(r.id)}" data-link>${esc(r.size)}</a>`}
+      <span class="num">${lek(r.min_price, r.currency)}</span>
+      <span class="num per">${lek(r.per, r.currency)} ${label}</span>
+      ${r.per === best ? `<span class="chip-best">ia vlen më shumë</span>` : `<span class="more">+${Math.round((r.per / best - 1) * 100)}%</span>`}</li>`).join("")}</ul></section>`;
+}
+
+/* ---------- "Raporto gabim": what visitors tell us, the matching learns from ---------- */
+function reportDialog(it) {
+  let d = document.getElementById("report");
+  if (d) d.remove();
+  d = document.createElement("dialog");
+  d.id = "report";
+  d.innerHTML = `<form method="dialog" class="report">
+    <h2>raporto gabim</h2>
+    <p class="note">Na ndihmon ta mbajmë krahasimin të saktë. Kur disa njerëz raportojnë të njëjtën gjë, e rregullojmë automatikisht.</p>
+    <label>Dyqani <select name="offer"><option value="">Asnjë dyqan i veçantë</option>
+      ${it.offers.map((o) => `<option value="${o.id}">${esc(shopName(o.shop))}: ${lek(o.price, o.currency)}</option>`).join("")}</select></label>
+    <fieldset><legend>Çfarë nuk shkon?</legend>
+      <label><input type="radio" name="kind" value="tjeter-produkt" required> Nuk është i njëjti produkt</label>
+      <label><input type="radio" name="kind" value="madhesi"> Është madhësi tjetër</label>
+      <label><input type="radio" name="kind" value="cmim"> Çmimi te dyqani është tjetër</label>
+      <label><input type="radio" name="kind" value="tjeter"> Diçka tjetër</label></fieldset>
+    <label>Shënim (pa të dhëna personale) <textarea name="note" maxlength="300" rows="2"></textarea></label>
+    <p class="report-msg" role="status"></p>
+    <div class="report-actions"><button type="submit" class="btn" value="send">Dërgo</button><button type="button" class="btn btn-ghost" data-close>Mbyll</button></div>
+  </form>`;
+  document.body.append(d);
+  d.querySelector("[data-close]").onclick = () => d.close();
+  d.querySelector("form").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target), msg = d.querySelector(".report-msg");
+    const r = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item: it.id, offer: f.get("offer") || null, kind: f.get("kind"), note: f.get("note") }) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    msg.textContent = j.message || j.error || "Nuk u lidhëm dot. Provo përsëri.";
+    if (r && r.ok) setTimeout(() => d.close(), 1600);
+  };
+  d.showModal();
+}
+
+/* ---------- instant suggestions while typing ---------- */
+function wireSuggest(form) {
+  if (form.dataset.suggest) return;
+  form.dataset.suggest = "1";
+  const input = form.querySelector('input[name="q"]');
+  const box = document.createElement("div");
+  box.className = "suggest";
+  box.setAttribute("role", "listbox");
+  box.id = `${input.id}-sug`;
+  box.hidden = true;
+  form.append(box);
+  input.setAttribute("autocomplete", "off");
+  input.setAttribute("aria-controls", box.id);
+  input.setAttribute("aria-expanded", "false");
+  let timer, active = -1, seq = 0;
+  const close = () => { box.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
+  const mark = () => box.querySelectorAll("a").forEach((a, i) => a.setAttribute("aria-selected", i === active));
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const v = input.value.trim();
+    if (v.length < 3) return close();
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      const d = await api(`/api/suggest?q=${encodeURIComponent(v)}`).catch(() => null);
+      if (my !== seq || !d) return;
+      if (!d.items.length) return close();
+      box.innerHTML = d.items.map((it) => `<a role="option" href="/produkt/${esc(it.id)}" data-link>${img(it.image, "")}
+        <span><b>${esc(it.title)}</b><small>${it.shops > 1 ? `${it.shops} dyqane, ` : ""}${it.shops > 1 && it.max_price > it.min_price ? `${lek(it.min_price, it.currency)} deri ${lek(it.max_price, it.currency)}` : lek(it.min_price, it.currency)}</small></span>
+        ${it.save_pct && it.in_stock_shops > 1 ? `<i>−${it.save_pct}%</i>` : ""}</a>`).join("")
+        + `<a class="all" href="/kerko?q=${encodeURIComponent(v)}" data-link>Të gjitha ${plural(d.total, "rezultat", "rezultatet")}</a>`;
+      box.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      active = -1;
+    }, 140);
+  });
+  input.addEventListener("keydown", (e) => {
+    const links = box.querySelectorAll("a");
+    if (box.hidden || !links.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + links.length) % links.length;
+      mark();
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      close();
+      go(links[active].getAttribute("href"));
+    } else if (e.key === "Escape") close();
+  });
+  box.addEventListener("click", close);
+  document.addEventListener("click", (e) => { if (!form.contains(e.target)) close(); });
+}
+const wireAllSuggest = () => document.querySelectorAll("form[data-search]").forEach(wireSuggest);
+
 /* ---------- router ---------- */
 
 function setFoot(updated) {
@@ -790,7 +1085,7 @@ async function route() {
   // the first page already came from the server (seo.py): keep it on screen until the full one is ready
   if (main.hasAttribute("data-ssr")) main.removeAttribute("data-ssr");
   else main.innerHTML = `<div class="wrap loading">Duke ngarkuar…</div>`;
-  document.title = "shporta: krahaso çmimet e modës dhe kozmetikës në Shqipëri";
+  document.title = "shporta: krahaso çmimet në dyqanet online të Shqipërisë";
   try {
     let m;
     if (pathname === "/") { await pageHome(); watchStrip(); }
@@ -806,12 +1101,14 @@ async function route() {
     else if (pathname === "/ndaj") await pageShare(params);
     else if (pathname === "/lista") await pageList();
     else if (pathname === "/raport") await pageReport();
+    else if (pathname === "/shporta") await pageBasket();
     else if ((m = pathname.match(/^\/raport\/(\d{4}-\d{2})$/))) await pageReport(m[1]);
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {
     main.innerHTML = `<div class="wrap empty"><b>${esc(e.status === 404 ? e.message : "Faqja nuk u ngarkua.")}</b>
       ${e.status === 404 ? `<a href="/" data-link>Kthehu në faqen kryesore</a>` : "Serveri mund të jetë duke u zgjuar. Rifresko faqen pas pak sekondash."}</div>`;
   }
+  wireAllSuggest();
   if (!homeCache) api("/api/home").then((d) => { homeCache = d; setFoot(d.stats.updated); }).catch(() => {});
 }
 
@@ -836,5 +1133,6 @@ document.addEventListener("submit", (e) => {
 window.addEventListener("popstate", route);
 route();
 watchBadge();
+basketBadge();
 consentBanner();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});

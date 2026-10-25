@@ -19,6 +19,11 @@ Two rows are the same product only when all of these hold:
   4. its price is plausible for the group: under half or over double the group's typical price means a different
      size or pack, so that row is dropped
   5. the shop doesn't sell several different products under the same name (we couldn't tell which one is meant)
+  0. or: both carry the same barcode (GTIN/EAN with a valid check digit), even when the shops name it very
+     differently ("Lansinoh Perla 3-N-1" / "THERAPEARL 3IN1 - LANSINOH"). Shops do make barcode mistakes (one gives
+     Mustela's 50 ml cream the 100 ml code), so a barcode never joins two different sizes, two products we already
+     keep apart, a shop's barcode written on several different names, nor a price far from the group's (rule 4)
+Tech: "8/256GB", "256 GB" and "256gb" read the same, the storage is the size, and a phone's "5G" is not 5 grams.
 Precision over recall: a wrong match shows a false "cheaper elsewhere", which is worse than a missed one.
 """
 import collections
@@ -110,6 +115,33 @@ MEN_WORDS = {"men", "man", "homme", "uomo", "him", "male", "masculin", "meshkuj"
 WOMEN_WORDS = {"women", "woman", "femme", "donna", "her", "female", "feminin", "femra"}
 
 
+# phones, computers and other electronics: their numbers are storage, memory, screen and power, not grams or ml
+# Brands that are also ordinary words or names ("Lattafa Honor & Glory", a "Galaxy" eyeshadow) count only with a
+# model number after them ("Honor 90", "Galaxy S24"); anything sold by the ml or gram, or named as a perfume, is not tech.
+TECH_RE = re.compile(r"\b(iphone|ipad|macbook|imac|xiaomi|huawei|oneplus|laptop|notebook|chromebook|smartphone|telefon|"
+                     r"celular|smartwatch|airpods|earbuds|kufje|headphones?|headset|monitor|televizor|playstation|ps5|ps4|"
+                     r"xbox|nintendo|ssd|hdd|router|printer|powerbank|power bank|karikues|charger|tastier[eë]?|keyboard|"
+                     r"procesor|processor|rtx|gtx|geforce|radeon)\b"
+                     r"|\b(galaxy|redmi|poco|oppo|realme|pixel|nokia|motorola|honor|vivo|lenovo)\s+(tab\b|note\b|watch\b|buds\b|"
+                     r"fold|flip|magic|[a-z]{0,2}\d)")
+# grams count from 10 g ("5G" on a phone is the network); ml, kg and oz always
+NOT_TECH_RE = re.compile(r"\d\s*(ml|gr|kg|oz)\b|\d{2,}\s*g\b|\b(edp|edt|parfum|eau|extrait|cologne|perfume|parfume)\b")
+TECH_UNITS_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(gb|tb|mb|mah|wh|w|hz|mp|mm|l|lt)\b")
+TECH_INCH_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:\"|''|”|inch(?:es)?|inç|in\b)")
+TECH_RAM_STORAGE_RE = re.compile(r"\b(\d{1,2})\s*(?:gb)?\s*/\s*(\d{2,4})\s*(gb|tb)\b")  # "8/256GB" = 8 GB RAM, 256 GB
+
+
+def valid_gtin(code):
+    """A barcode (EAN-8, UPC-12, EAN-13, GTIN-14) with a correct check digit, as 14 digits; None otherwise."""
+    g = re.sub(r"\D", "", str(code or ""))
+    if len(g) not in (8, 12, 13, 14) or len(set(g)) == 1:
+        return None
+    digits = [int(x) for x in g]
+    body = digits[:-1][::-1]
+    total = sum(x * (3 if i % 2 == 0 else 1) for i, x in enumerate(body))
+    return g.zfill(14) if (10 - total % 10) % 10 == digits[-1] else None
+
+
 def gender_of(title):
     """"men" / "women" when the title says who it's for (and not both), else None."""
     t = fold(title)
@@ -151,6 +183,8 @@ def parse(title):
     # A later "Parfum" is a concentration (Sauvage Parfum is not Sauvage EDP) and stays.
     t = t.replace("eau de parfum", " edp ").replace("eau de toilette", " edt ").replace("extrait de parfum", " extrait ")
     t = re.sub(r"^[\s\W]*(parfume|parfum|perfume)\s+((per|for) (femra|meshkuj|women|men)\s+)?", " ", t)
+    if TECH_RE.search(t) and not NOT_TECH_RE.search(t):
+        return parse_tech(t)
     size = None
     sizes = list(SIZE_RE.finditer(t))
     if sizes:
@@ -195,6 +229,45 @@ def parse(title):
     return " ".join(sorted(words)), size
 
 
+def parse_tech(t):
+    """A phone, laptop or other device: "Samsung Galaxy S24 5G 8/256GB Black" -> words with "8gb", "256gb", "5g";
+    the storage (the largest GB/TB figure) is the size. Units are written one way so shops' spellings agree."""
+    t = TECH_RAM_STORAGE_RE.sub(lambda m: f" {m.group(1)}gb {m.group(2)}{m.group(3)} ", t)
+    t = TECH_INCH_RE.sub(lambda m: f" {m.group(1).replace(',', '.')}inch ", t)
+    t = TECH_UNITS_RE.sub(lambda m: f" {m.group(1).replace(',', '.')}{m.group(2)} ", t)
+    storage = [(float(v) * (1000 if u == "tb" else 1)) for v, u in re.findall(r"\b(\d+(?:\.\d+)?)(gb|tb)\b", t)]
+    big = [x for x in storage if x >= 16]  # 16 GB and up is storage; 4/8/12 GB is memory
+    size = (max(big), "gb") if big else None
+    if not size:  # an appliance's capacity ("Friteze 5,5L", "Furre mikrovale 20L"), in ml like other litres
+        litres = re.findall(r"\b(\d+(?:\.\d+)?)(?:l|lt)\b", t)
+        if len(set(litres)) == 1:
+            size = (round(float(litres[0]) * 1000, 2), "ml")
+    words = set()
+    for w in re.findall(r"[a-z0-9%+.]+", t):
+        w = w.strip(".+")
+        if not w or w in STOP or w in CLOTHING_SIZES:
+            continue
+        words.add(w)
+    words -= NOISE
+    if words & set(TECH_BRAND_OF):
+        # a phone, laptop or console of a known line: what kind of device it is and labels like "RAM" or "Dual SIM"
+        # are words some shops write and others don't. Accessories keep every word ("Mbajtëse për telefon" is not
+        # "Mbajtëse për tablet", a wireless charger is not a cable one)
+        words -= TECH_LABELS
+        words |= {TECH_BRAND_OF[w] for w in words if w in TECH_BRAND_OF}  # "iPhone 15" is "Apple iPhone 15"
+    return " ".join(sorted(words)), size
+
+
+# words some shops write and others leave out, never what tells two devices apart
+TECH_LABELS = set("""telefon telefoni celular celulari smartphone mobile laptop laptopi notebook kufje headphones
+headphone ram rom memory memorie storage dual sim dualsim ds 5g 4g lte nfc unlocked global version""".split())
+TECH_BRAND_OF = {"iphone": "apple", "ipad": "apple", "macbook": "apple", "imac": "apple", "airpods": "apple",
+                 "galaxy": "samsung", "redmi": "xiaomi", "poco": "xiaomi", "pixel": "google", "playstation": "sony",
+                 "ps5": "sony", "ps4": "sony", "xbox": "microsoft", "ideapad": "lenovo", "thinkpad": "lenovo",
+                 "zenbook": "asus", "vivobook": "asus", "pavilion": "hp", "elitebook": "hp", "inspiron": "dell",
+                 "latitude": "dell", "xps": "dell"}
+
+
 def same_size(a, b):
     return a[0] == b[0] and (a[1] is None or b[1] is None or a[1] == b[1])
 
@@ -217,10 +290,12 @@ def main():
     by_name = collections.defaultdict(list)
     key_brands = collections.defaultdict(set)  # the words of the brand the shops give for each name
     brand_names = collections.defaultdict(set)
+    parsed = {}  # pid -> (name key, size), for the barcode rule
     for pid, shop, title, price, cur, brand in con.execute(
             "SELECT id, shop, title, price, currency, brand FROM products WHERE price > 0"):
         key, size = parse(title)
         price_of[pid] = (price, cur)
+        parsed[pid] = (key, size)
         if len(key.split()) >= 2 and shop not in SECOND_HAND:  # one word ("Bluza") is too vague to match on
             by_name[key].append((pid, shop, size))
             if brand:
@@ -305,7 +380,8 @@ def main():
         core -= MEN_WORDS | WOMEN_WORDS | {"pour", "for"}
         if key not in beauty or words & (MAKEUP_WORDS | SCENT_WORDS) or not specific(key) or len(core) < 2:
             continue  # beauty and pharmacy only: in clothing "Washed", "Pebble" are another colour or finish
-        rare = sorted(words, key=lambda w: len(posting[w]))[:2]
+        # ties in alphabetical order: a set's order changes from run to run, and so would the groups (and their ids)
+        rare = sorted(words, key=lambda w: (len(posting[w]), w))[:2]
         fuller = (posting[rare[0]] & posting[rare[-1]]) - {key}
         if any(set(t.split()) & SCENT_WORDS for t in fuller if words < set(t.split())):
             continue  # a perfume's name: a word more is another scent ("Pour Homme" / "Aqua Pour Homme")
@@ -334,7 +410,7 @@ def main():
         groups_of[root(k)].append(k)
     for r, ks in groups_of.items():
         members = set(ks) | {r}
-        canon = max(members, key=lambda k: (len({s for _, s, _ in by_name[k]}), len(k)))  # the most shops' name
+        canon = max(sorted(members), key=lambda k: (len({s for _, s, _ in by_name[k]}), len(k), k))  # the most shops' name
 
         def rest(k):  # what still differs from the chosen name once descriptions, brand and type are set aside
             a, b = set(k.split()), set(canon.split())
@@ -345,7 +421,7 @@ def main():
         # names from two brands never become one product ("Kerastase" and "Kérastase Paris" are one brand)
         # and every name must show that brand, in its title or its own shop's brand field ("Dry Body Oil" alone
         # could be any brand's)
-        main = key_brands[canon] or next((key_brands[k] for k in members if key_brands[k]), set())
+        main = key_brands[canon] or next((key_brands[k] for k in sorted(members) if key_brands[k]), set())
         members = {k for k in members if main and (key_brands[k] or set(k.split())) & main}
         if canon not in members:
             continue
@@ -431,6 +507,78 @@ def main():
         elif unsized:
             stats["no size, nothing to compare"] += len(unsized)
 
+    # rule 0: the same barcode in 2+ shops is the same product, whatever the names say (see the top of the file)
+    via_gtin = set()
+    gid_of = dict(rows)
+    shop_of_pid, gtin_of = {}, {}
+    for pid, shop, code in con.execute("SELECT id, shop, gtin FROM products WHERE price > 0 AND gtin IS NOT NULL AND gtin != ''"):
+        g = valid_gtin(code)
+        if g and shop not in SECOND_HAND and pid in parsed:
+            gtin_of[pid], shop_of_pid[pid] = g, shop
+    names_on = collections.defaultdict(set)  # (shop, barcode) -> the names that shop writes it on
+    for pid, g in gtin_of.items():
+        names_on[(shop_of_pid[pid], g)].add(parsed[pid][0])
+    by_gtin = collections.defaultdict(list)
+    for pid, g in gtin_of.items():
+        if len(names_on[(shop_of_pid[pid], g)]) == 1:  # one barcode on several names: that shop's codes are unreliable
+            by_gtin[g].append(pid)
+    reliable = {p for ps in by_gtin.values() for p in ps}
+    # A name group whose shops give two barcodes is usually one product in two packagings or markets (Davines,
+    # SKIN1004), and stays. But when a row's barcode is also on a product we know under another name, the barcode
+    # says what it is: one shop's "Mustela Gentle Shampoo" carries the code of the organic "Shampooing Doux Bio",
+    # so it leaves the classic shampoo's group and joins the organic one through the barcode below.
+    codes_in, keys_in, members = collections.defaultdict(set), collections.defaultdict(set), collections.defaultdict(list)
+    for p, gid in rows:
+        keys_in[gid].add(parsed[p][0])
+        members[gid].append(p)
+        if p in reliable:
+            codes_in[gid].add(gtin_of[p])
+    claimed = set()
+    for gid, codes in codes_in.items():
+        if len(codes) < 2:
+            continue
+        for p in members[gid]:
+            if p in reliable and any(gid_of.get(q) != gid and parsed[q][0] not in keys_in[gid]
+                                     for q in by_gtin[gtin_of[p]] if q != p):
+                claimed.add(p)
+    if claimed:
+        stats["left a name group for the product its barcode names"] += len(claimed)
+        rows = [(p, g) for p, g in rows if p not in claimed]
+        gid_of = dict(rows)
+    for g, pids in by_gtin.items():
+        if len({shop_of_pid[p] for p in pids}) < 2:
+            continue
+        sizes = []
+        for p in pids:
+            sz = parsed[p][1]
+            if sz and not any(same_size(sz, x) for x in sizes):
+                sizes.append(sz)
+        if len(sizes) > 1:
+            stats["barcode on two sizes"] += 1
+            continue
+        groups = {gid_of[p] for p in pids if p in gid_of}
+        if len(groups) > 1:
+            stats["barcode across two products we keep apart"] += 1
+            continue
+        gid = next(iter(groups)) if groups else hashlib.md5(f"gtin|{g}".encode()).hexdigest()[:12]
+        for p in pids:
+            if p not in gid_of:
+                gid_of[p] = gid
+                rows.append((p, gid))
+                via_gtin.add(p)
+    stats["joined by barcode"] += len(via_gtin)
+
+    # what visitors taught us: a listing that 3 different people reported as another product or size (feedback.py)
+    try:
+        import feedback
+        reported = feedback.excluded()
+    except Exception:
+        reported = set()
+    if reported:
+        before = len(rows)
+        rows = [(p, g) for p, g in rows if p not in reported]
+        stats["reported by visitors as another product"] += before - len(rows)
+
     # rule 4: drop rows whose price is implausible for the group (per currency)
     by_group = collections.defaultdict(list)
     for pid, gid in rows:
@@ -448,7 +596,7 @@ def main():
     # filled-in concentration or brand ("Mancera Red Tobacco" -> "... EDP"), within 50% when only descriptions
     # differed, so another concentration or edition at another price can't slip in
     for (gid, cur), pids in by_group.items():
-        full = [price_of[p][0] for p in pids if p not in completed]
+        full = [price_of[p][0] for p in pids if p not in completed and p in keep]  # not rows rule 4 just dropped
         if not full:
             continue  # every shop left the same word out: they match each other as before
         med = statistics.median(full)
@@ -510,7 +658,10 @@ def main():
     rows = [(p, g) for p, g in rows if len(shops_per_group[g]) >= 2]
 
     con.execute("DELETE FROM matches")
-    con.executemany("INSERT INTO matches (product_id, group_id) VALUES (?, ?)", rows)
+    if "via" not in {r[1] for r in con.execute("PRAGMA table_info(matches)")}:
+        con.execute("ALTER TABLE matches ADD COLUMN via TEXT")  # 'gtin': joined by barcode, its size is the group's
+    con.executemany("INSERT INTO matches (product_id, group_id, via) VALUES (?, ?, ?)",
+                    [(p, g, "gtin" if p in via_gtin else None) for p, g in rows])
     con.commit()
     groups = len({g for _, g in rows})
     print(f"{groups:,} products matched across 2+ shops ({len(rows):,} shop listings)")
