@@ -14,7 +14,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 SRC = HERE / "extension"
-SHIP = ["background.js", "content.js", "icons"]
+SHIP = ["background.js", "content.js", "popup.html", "popup.js", "icons"]
 
 
 def firefox_manifest(m):
