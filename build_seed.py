@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import dupes
-from match import parse, size_label
+from match import parse, size_label, valid_gtin
 
 HERE = Path(__file__).parent
 SRC = HERE / "data" / "phia.db"
@@ -229,6 +229,15 @@ def main():
 
     dst.executemany(f"INSERT INTO products VALUES ({','.join('?' * len(rows[0]))})", rows)
     dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", items)
+    # barcodes -> products, for "Skano" (scan a barcode in a shop or at home and see every shop's price)
+    item_of_pid = {r[0]: r[14] for r in rows}
+    codes = set()
+    for pid, code in src.execute("SELECT id, gtin FROM products WHERE gtin IS NOT NULL AND gtin != ''"):
+        g = valid_gtin(code)
+        if g and pid in item_of_pid:
+            codes.add((g, item_of_pid[pid]))
+    dst.execute("CREATE TABLE barcodes (gtin TEXT, item TEXT, PRIMARY KEY (gtin, item))")
+    dst.executemany("INSERT INTO barcodes VALUES (?,?)", codes)
     dst.execute("CREATE TABLE item_history (id TEXT PRIMARY KEY, h TEXT)")
     dst.executemany("INSERT INTO item_history VALUES (?,?)", item_history(src, rows, latest[:10], {i[0]: i[6] for i in items}))
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())

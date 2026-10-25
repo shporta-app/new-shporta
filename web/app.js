@@ -365,7 +365,7 @@ async function pageItem(id) {
     : o.price === lo ? `<span class="diff best">Më i liri</span>` : `<span class="diff">+${lek(o.price - lo, o.currency)}</span>`;
   if (multiShop) noteOffers(it, it.offers);
   const rows = it.offers.map((o) => `<tr class="${o.in_stock ? "" : "out"}">
-      <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
+      <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span>${o.risk ? `<span class="risk">Shumë më lirë se dyqanet e tjera: kontrollo që është origjinal dhe e njëjta madhësi.</span>` : ""}</td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}${priceNote(o)}</td>
       <td>${o.in_stock ? diffCell(o) : "S'ka gjendje"}</td>
       <td>${shopLink(o, it.id, "produkt", `btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}`)}</td>
@@ -433,6 +433,13 @@ async function pageItem(id) {
     ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Emër i ngjashëm: nuk e konfirmojmë që është i njëjti produkt. Nga dyqane të tjera, më të lirat së pari.</p>
       <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
   </div>`;
+  if (cheap && multiShop) {  // phones: the cheapest offer stays in reach while scrolling
+    const bar = document.createElement("div");
+    bar.className = "buybar";
+    bar.innerHTML = `<span><small>Më i liri te ${esc(shopName(cheap.shop))}</small><b class="num">${lek(lo, it.currency)}</b></span>
+      ${shopLink(cheap, it.id, "produkt", "btn", "Hape në dyqan")}`;
+    main.append(bar);
+  }
   const bb = document.getElementById("basket-add");
   const blabel = () => { bb.textContent = inBasket(it.id) ? "Në shportë ✓" : "Shto në shportë"; bb.setAttribute("aria-pressed", inBasket(it.id)); };
   blabel();
@@ -803,6 +810,8 @@ function basketBadge() {
   const n = basketList().reduce((t, b) => t + b.qty, 0);
   a.querySelector("span").textContent = n ? n : "";
   a.classList.toggle("has", n > 0);
+  const t = document.querySelector(".tab-basket b");
+  if (t) t.textContent = n ? n : "";
 }
 
 // items: [{id, title, qty, offers: [{shop, price}]}] -> the plans worth showing, cheapest first
@@ -1065,6 +1074,111 @@ function wireSuggest(form) {
 }
 const wireAllSuggest = () => document.querySelectorAll("form[data-search]").forEach(wireSuggest);
 
+/* ---------- "Skano": the phone's camera reads a barcode or a label; we show every shop's price ---------- */
+// Barcodes: the browser's own BarcodeDetector where it exists (Chrome on Android), else the ZXing library (iPhone).
+// Labels: Tesseract reads the text on the phone itself; the photo never leaves the device, only the words do.
+const ZXING = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
+const TESSERACT = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const loadScript = (src) => new Promise((ok, fail) => {
+  if (document.querySelector(`script[src="${src}"]`)) return ok();
+  const s = Object.assign(document.createElement("script"), { src, onload: ok, onerror: fail, crossOrigin: "anonymous" });
+  document.head.append(s);
+});
+let scanStop = null;  // stops the camera when leaving the page
+
+async function pageScan() {
+  document.title = "Skano një produkt | shporta";
+  main.innerHTML = `<div class="wrap scan">
+    <div class="page-head"><h1>skano</h1>
+      <p>Drejtoje kamerën te barkodi i produktit, në dyqan apo në shtëpi: të tregojmë sa kushton në çdo dyqan online, dhe alternativa më të lira.</p></div>
+    <div class="scan-stage">
+      <video id="scan-video" playsinline muted></video>
+      <div class="scan-frame" aria-hidden="true"><i></i></div>
+      <button type="button" class="btn scan-start" id="scan-start">Hap kamerën</button>
+      <p class="scan-status" id="scan-status" role="status"></p>
+    </div>
+    <div class="scan-alt">
+      <label class="btn btn-ghost scan-photo">Foto e etiketës<input type="file" id="scan-file" accept="image/*" capture="environment" hidden></label>
+      <form id="scan-code" class="scan-code"><label class="sr" for="scan-digits">Shkruaj numrin e barkodit</label>
+        <input id="scan-digits" inputmode="numeric" pattern="[0-9 ]{8,18}" placeholder="ose shkruaj numrin e barkodit">
+        <button class="btn btn-ghost" type="submit">Kërko</button></form>
+    </div>
+    <div id="scan-result" aria-live="polite"></div>
+    <p class="note">Kamera dhe fotoja përdoren vetëm në telefonin tënd: te ne vjen vetëm numri i barkodit ose fjalët e etiketës.
+      Origjinalitetin e një produkti nuk e vërteton dot asnjë foto; kur një dyqan e shet shumë më lirë se të tjerët, të paralajmërojmë.</p>
+  </div>`;
+  const status = document.getElementById("scan-status"), result = document.getElementById("scan-result");
+  const show = async (url, label) => {
+    result.innerHTML = `<p class="loading">Duke kërkuar…</p>`;
+    const d = await api(url).catch(() => null);
+    if (!d) { result.innerHTML = `<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`; return; }
+    if (d.items.length === 1) return go(`/produkt/${d.items[0].id}`);
+    result.innerHTML = d.items.length
+      ? `<h2 class="sub">${esc(label(d))}</h2><div class="grid">${d.items.map(tile).join("")}</div>`
+      : `<div class="empty"><b>Nuk e gjetëm këtë produkt.</b>${d.valid === false ? "Ky numër nuk duket si barkod. Provo përsëri." :
+          "Mund të mos shitet online në Shqipëri, ose dyqanet nuk e shkruajnë barkodin. Provo foton e etiketës ose kërko me emër."}</div>`;
+  };
+  const found = (code) => { stop(); navigator.vibrate?.(60); status.textContent = `Barkodi ${code}`; show(`/api/barcode?code=${encodeURIComponent(code)}`, () => `Barkodi ${code}`); };
+  let stream = null, timer = null, zx = null;
+  const stop = () => {
+    clearInterval(timer); timer = null;
+    if (zx) { zx.reset(); zx = null; }
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    document.querySelector(".scan-stage")?.classList.remove("live");
+  };
+  scanStop = stop;
+  document.getElementById("scan-start").onclick = async () => {
+    const video = document.getElementById("scan-video");
+    status.textContent = "Duke hapur kamerën…";
+    try {
+      if ("BarcodeDetector" in window) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
+        timer = setInterval(async () => {
+          const codes = await det.detect(video).catch(() => []);
+          if (codes.length) found(codes[0].rawValue);
+        }, 250);
+      } else {
+        await loadScript(ZXING);
+        zx = new ZXing.BrowserMultiFormatReader();
+        zx.decodeFromConstraints({ video: { facingMode: "environment" } }, video, (r) => { if (r) found(r.getText()); });
+      }
+      document.querySelector(".scan-stage").classList.add("live");
+      status.textContent = "Mbaje barkodin brenda kornizës.";
+    } catch (e) {
+      status.textContent = "Kamera nuk u hap. Lejo kamerën te shfletuesi, ose përdor foton e etiketës.";
+    }
+  };
+  document.getElementById("scan-code").onsubmit = (e) => {
+    e.preventDefault();
+    const code = document.getElementById("scan-digits").value.replace(/\D/g, "");
+    if (code) found(code);
+  };
+  document.getElementById("scan-file").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    stop();
+    result.innerHTML = `<p class="loading">Duke lexuar etiketën në telefon… (herën e parë zgjat pak)</p>`;
+    try {
+      // a barcode in the photo first: exact
+      if ("BarcodeDetector" in window) {
+        const bmp = await createImageBitmap(file);
+        const codes = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(bmp).catch(() => []);
+        if (codes.length) return found(codes[0].rawValue);
+      }
+      await loadScript(TESSERACT);
+      const { data } = await Tesseract.recognize(file, "eng");
+      const text = data.text.replace(/\s+/g, " ").trim();
+      if (!text) { result.innerHTML = `<div class="empty"><b>Nuk lexuam dot tekst.</b>Fotografo emrin e produktit nga afër, me dritë.</div>`; return; }
+      show(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`, (d) => d.words && d.words.length ? `Lexuam: ${d.words.join(" ")}` : "Rezultatet");
+    } catch {
+      result.innerHTML = `<div class="empty"><b>Nuk e lexuam dot foton.</b>Provo përsëri ose kërko me emër.</div>`;
+    }
+  };
+}
+
 /* ---------- router ---------- */
 
 function setFoot(updated) {
@@ -1076,6 +1190,12 @@ function setFoot(updated) {
 
 async function route() {
   const { pathname, search } = location;
+  if (scanStop) { scanStop(); scanStop = null; }
+  document.querySelectorAll(".tabbar a").forEach((a) => {
+    const h = a.getAttribute("href");
+    a.toggleAttribute("aria-current", h === "/" ? pathname === "/" : pathname.startsWith(h));
+  });
+  document.body.classList.toggle("on-product", pathname.startsWith("/produkt/"));
   const params = search.slice(1);
   document.querySelectorAll(".top-nav a").forEach((a) => {
     if (pathname.startsWith(a.getAttribute("href"))) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
@@ -1102,6 +1222,7 @@ async function route() {
     else if (pathname === "/lista") await pageList();
     else if (pathname === "/raport") await pageReport();
     else if (pathname === "/shporta") await pageBasket();
+    else if (pathname === "/skano") await pageScan();
     else if ((m = pathname.match(/^\/raport\/(\d{4}-\d{2})$/))) await pageReport(m[1]);
     else throw Object.assign(new Error("Kjo faqe nuk ekziston."), { status: 404 });
   } catch (e) {

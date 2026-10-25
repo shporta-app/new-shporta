@@ -418,6 +418,13 @@ def item(item_id):
     it["category_label"] = CATEGORIES.get(it["cat"], "Të tjera")
     it["tracked_since"] = TRACKED_SINCE  # the first day of price history: claims about "lowest" only reach back to it
     it["used"] = any(o["shop"] in SECOND_HAND for o in it["offers"])
+    # a price far below the other shops for the very same product can be a fake or another size: say so, never hide it
+    live = sorted(o["price"] for o in it["offers"] if o["in_stock"] and o["currency"] == it["currency"])
+    if len(live) >= 3:
+        mid = live[len(live) // 2]
+        for o in it["offers"]:
+            if o["in_stock"] and o["currency"] == it["currency"] and o["price"] < mid * 0.65:
+                o["risk"] = True
     for o in it["offers"]:  # a shop that writes only "55" in a 55 g comparison: same number, show it with the unit
         if not o.get("size") and it["size"] and o_size_num(o) == it["size"].split()[0]:
             o["size"] = it["size"]
@@ -440,6 +447,8 @@ SYNONYMS = [
     {"buzekuq", "lipstick"}, {"rimel", "mascara"}, {"pudra", "powder"}, {"vathe", "earrings"}, {"unaze", "ring"},
     {"varese", "necklace"}, {"byzylyk", "bracelet"}, {"frigorifer", "fridge", "refrigerator"},
     {"rrobalarese", "lavatrice"}, {"divan", "sofa"}, {"karrige", "chair"},
+    {"moisturising", "moisturizing", "moisturiser", "moisturizer", "hidratues"}, {"colour", "color"},
+    {"cleanser", "pastrues"}, {"sunscreen", "spf"}, {"toner", "tonik"},
 ]
 SYN_OF = {w: g for g in SYNONYMS for w in g}
 _vocab = None
@@ -456,7 +465,7 @@ def vocabulary():
     return _vocab
 
 
-threading.Thread(target=vocabulary, daemon=True).start()  # ready before the first mistyped search
+threading.Thread(target=lambda: (vocabulary(), brand_words()), daemon=True).start()  # ready before the first search
 
 
 def search_items(words, limit):
@@ -538,6 +547,51 @@ def suggest(q):
         if t2 > total:
             total, items = t2, i2
     return {"total": total, "items": items}
+
+
+def barcode(code):
+    """"Skano": a barcode read by the phone's camera -> the products that carry it, most shops first."""
+    from match import valid_gtin
+    g = valid_gtin(code)
+    if not g:
+        return {"code": code, "valid": False, "items": []}
+    try:
+        ids = [r[0] for r in db().execute("SELECT item FROM barcodes WHERE gtin = ?", (g,))]
+    except sqlite3.OperationalError:  # a data file from before barcodes
+        ids = []
+    items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(ids))}) ORDER BY shops DESC, in_stock_shops DESC",
+                      ids) if ids else []
+    return {"code": g.lstrip("0"), "valid": True, "items": items}
+
+
+def identify(text):
+    """"Skano" with a photo of the label: the phone reads the text (OCR, on the phone), we keep the words our product
+    names use, rarest first (a brand or line name says more than "cream"), and search with fewer words until
+    something is found. OCR misreads letters, so each word also gets the typo correction."""
+    from match import DESCRIPTIONS, NOISE, STOP
+    vocab, skip = vocabulary(), DESCRIPTIONS | NOISE | STOP | {"for", "with", "dry", "oily", "normal", "all", "types"}
+    words = []
+    for w in re.findall(r"[a-z0-9]{3,}", fold(text)):
+        if w in skip:
+            continue  # label words that describe ("for dry skin") rather than name the product
+        w = w if w in vocab else (correct([w]) or [w])[0]
+        if w in vocab and w not in words:
+            words.append(w)
+    brands = brand_words()
+    words.sort(key=lambda w: (w not in brands, vocab[w]))  # the brand first, then the rarest words
+    # words one at a time, brand and rarest first; a word that leaves nothing ("strength", "high" on the label but
+    # not in any product name) is skipped, so marketing text on a label can't push the search off the product
+    chosen, total = [], 0
+    for w in words[:12]:
+        t, _ = search_items(chosen + [w], 1)
+        if t:
+            chosen, total = chosen + [w], t
+        if len(chosen) == 5 or total == 1:
+            break
+    if chosen:
+        total, items = search_items(chosen, 12)
+        return {"words": chosen, "total": total, "items": items}
+    return {"words": words[:4], "total": 0, "items": []}
 
 
 def basket(ids):
@@ -1000,6 +1054,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, alert_page(path, q).encode(), "text/html; charset=utf-8", cache="no-store")
             if path == "/api/suggest":
                 return self._send(200, suggest(q.get("q", "")[:100]), cache="public, max-age=300")
+            if path == "/api/barcode":
+                self.count("search")
+                return self._send(200, barcode(q.get("code", "")[:20]))
+            if path == "/api/identify":
+                self.count("search")
+                return self._send(200, identify(q.get("text", "")[:600]))
             if path == "/api/basket":
                 return self._send(200, basket(q.get("ids", "")))
             if path == "/api/items":
