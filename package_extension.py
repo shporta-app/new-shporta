@@ -22,9 +22,10 @@ def firefox_manifest(m):
     m["background"] = {"scripts": ["background.js"]}
     m["browser_specific_settings"] = {"gecko": {
         "id": "extension@shporta.app",
-        "strict_min_version": "128.0",
+        # data_collection_permissions exists from Firefox 140 (Android 142): asking for less leaves it ignored there
+        "strict_min_version": "140.0",
         "data_collection_permissions": {"required": ["websiteContent"]},
-    }}
+    }, "gecko_android": {"strict_min_version": "142.0"}}
     return m
 
 
