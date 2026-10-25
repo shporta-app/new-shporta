@@ -266,6 +266,20 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .alert-form small { color: var(--muted); font-size: 14px; }
 .alert-form small.ok { color: #2F7D32; font-weight: 600; }
 .alert-form small.err { color: #B4441F; font-weight: 600; }
+/* "Kursimet e mia" on the list page: possible savings and milestones, kept in the browser */
+.savings { border: 1px solid var(--line); border-radius: 18px; padding: 20px 22px; margin: 6px 0 26px; max-width: 760px; }
+.savings h2 { margin: 0 0 12px; }
+.sav-nums { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 12px; }
+.sav-nums p { margin: 0; color: var(--muted); font-size: 15px; }
+.sav-nums b { display: block; font: 800 30px/1.1 var(--display); color: var(--ink); }
+.sav-nums p:first-child b { background: var(--lime); color: #14121F; padding: 2px 10px; border-radius: 8px; display: table; margin-bottom: 4px; }
+.badges { list-style: none; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.badges li { font-size: 14px; padding: 5px 12px; border-radius: 999px; border: 1px dashed var(--line); color: var(--muted); }
+.badges li.got { border: 1px solid transparent; background: var(--violet-tint); color: var(--violet-deep); font-weight: 600; }
+.sav-log { padding-left: 18px; margin: 8px 0 0; }
+.sav-log li { margin: 4px 0; }
+.sav-log span { color: var(--muted); font-size: 14px; }
+.savings details summary { cursor: pointer; color: var(--violet); font-weight: 600; }
 .watchlist { list-style: none; padding: 0; margin: 10px 0 40px; }
 .watchlist li { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .watchlist li > a { display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; flex: 1; text-decoration: none; color: var(--ink); min-width: 0; }

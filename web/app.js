@@ -77,8 +77,58 @@ function watchBadge() {
   const a = document.getElementById("nav-lista");
   if (!a) return;
   const n = watchList().length;
-  a.hidden = !n;
+  a.hidden = !n && !savings().length;
   a.querySelector("span").textContent = n ? ` (${n})` : "";
+}
+
+// "Kursimet e mia": when a visitor goes from shporta to a shop, this browser notes how much less that shop asks than
+// the dearest shop for the same product. Kept only here (localStorage), never sent to us. It is a possible saving:
+// we don't know whether they bought.
+const SAVE_KEY = "shporta-kursime";
+const OFFERS_ON_SCREEN = new Map();  // offer id -> what a click on it means; only offers of an exact comparison
+function noteOffers(item, offers) {
+  const live = offers.filter((o) => o.in_stock && o.currency === item.currency);
+  if (new Set(live.map((o) => o.shop)).size < 2) return;  // one shop: nothing compared, no saving to claim
+  const dear = Math.max(...live.map((o) => o.price));
+  for (const o of live) OFFERS_ON_SCREEN.set(String(o.id), { item: item.id, title: item.title, price: o.price, dear, cur: o.currency });
+}
+const savings = () => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || []; } catch { return []; } };
+document.addEventListener("click", (e) => {
+  const a = e.target.closest('a[href^="/go/"]');
+  const info = a && OFFERS_ON_SCREEN.get(a.getAttribute("href").split("/")[2].split("?")[0]);
+  if (!info || info.dear <= info.price) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const log = savings().filter((x) => !(x.item === info.item && x.date === today));  // one entry per product per day
+  log.unshift({ ...info, saved: info.dear - info.price, date: today });
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(log.slice(0, 300))); } catch {}
+}, true);
+// milestones: what the visitor has done, never a promise of money
+const BADGES = [
+  { id: "first", name: "Krahasimi i parë", test: (s) => s.n >= 1, how: "Kalo te dyqani më i lirë një herë" },
+  { id: "hunter", name: "Gjuetar zbritjesh", test: (s) => s.n >= 5, how: "5 herë te një dyqan më i lirë" },
+  { id: "5k", name: "5 000 L kursim i mundshëm", test: (s) => s.total >= 5000, how: "Mblidh 5 000 L" },
+  { id: "20k", name: "20 000 L kursim i mundshëm", test: (s) => s.total >= 20000, how: "Mblidh 20 000 L" },
+  { id: "watch", name: "Ndjekës i çmimeve", test: (s) => s.watched >= 5, how: "Ndiq 5 produkte" },
+];
+function savingsSummary() {
+  const log = savings().filter((x) => x.cur === "ALL");
+  const month = new Date().toISOString().slice(0, 7);
+  const sum = (l) => l.reduce((t, x) => t + x.saved, 0);
+  return { log, n: log.length, total: sum(log), month: sum(log.filter((x) => x.date.startsWith(month))), watched: watchList().length };
+}
+function savingsBox() {
+  const s = savingsSummary();
+  const badges = BADGES.map((b) => `<li class="${b.test(s) ? "got" : ""}" title="${esc(b.how)}">${esc(b.name)}</li>`).join("");
+  return `<section class="savings" aria-labelledby="sav-h">
+    <h2 id="sav-h">kursimet e mia</h2>
+    ${s.n ? `<div class="sav-nums"><p><b class="num">${lek(s.month)}</b>këtë muaj</p><p><b class="num">${lek(s.total)}</b>gjithsej, ${plural(s.n, "herë", "herë")}</p></div>`
+      : `<p class="note">Kur kalon nga shporta te dyqani më i lirë, këtu shfaqet sa më pak kërkon ai se dyqani më i shtrenjtë për të njëjtin produkt.</p>`}
+    <ul class="badges">${badges}</ul>
+    <p class="note">Kursim i mundshëm: diferenca mes çmimit të dyqanit ku kalove dhe dyqanit më të shtrenjtë, për të njëjtin produkt në të njëjtën madhësi.
+      Nuk e dimë nëse e bleve. Ruhet vetëm në këtë shfletues.</p>
+    ${s.n ? `<details><summary>Ku kalove</summary><ul class="sav-log">${s.log.slice(0, 20).map((x) =>
+      `<li><a href="/produkt/${esc(x.item)}" data-link>${esc(x.title)}</a> <span>${day(x.date)}: ${lek(x.price)}, ${lek(x.saved)} më pak</span></li>`).join("")}</ul></details>` : ""}
+  </section>`;
 }
 
 /* ---------- shared pieces ---------- */
@@ -87,6 +137,7 @@ function watchBadge() {
 function ruler(item, { heading = "h3", animate = false, linkHead = true, showHead = true, from = "ballina" } = {}) {
   const offers = (item.offers || []).filter((o) => o.currency === item.currency);
   if (!offers.length) return "";
+  noteOffers(item, offers);
   const max = Math.max(...offers.map((o) => o.price));
   const live = offers.filter((o) => o.in_stock);
   const best = live.length ? Math.min(...live.map((o) => o.price)) : null;
@@ -312,6 +363,7 @@ async function pageItem(id) {
   const cheap = live.find((o) => o.price === lo), dear = live.find((o) => o.price === hi);
   const diffCell = (o) => !multiShop || o.currency !== it.currency ? "Në stok"
     : o.price === lo ? `<span class="diff best">Më i liri</span>` : `<span class="diff">+${lek(o.price - lo, o.currency)}</span>`;
+  if (multiShop) noteOffers(it, it.offers);
   const rows = it.offers.map((o) => `<tr class="${o.in_stock ? "" : "out"}">
       <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}${priceNote(o)}</td>
@@ -419,6 +471,7 @@ async function pageList() {
     <div class="page-head"><h1>produktet që ndjek</h1>
       <p>${l.length ? `${plural(l.length, "produkt", "produkte")}${drops.length ? `, ${drops.length} me çmim më të ulët se kur e ruajte` : ""}.` : ""}
         Lista ruhet vetëm në këtë shfletues: nuk ka llogari dhe ne nuk e shohim. Krahasojmë çmimin më të lirë në stok sot me atë të ditës kur e ruajte.</p></div>
+    ${savingsBox()}
     ${l.length ? `<ul class="watchlist">${[...drops, ...l.filter((w) => !dropped(w))].map(row).join("")}</ul>`
       : `<div class="empty"><b>Nuk ndjek asnjë produkt ende.</b>Hap një produkt dhe shtyp "Ndiq çmimin". Kur rihap shportën, këtu shikon nëse çmimi ra.</div>`}
   </div>`;
@@ -651,6 +704,9 @@ function pagePrivacy() {
     <p>Për çdo faqe që hap numërojmë llojin e faqes, ditën dhe faqen nga erdhe (p.sh. google.com). Që një vizitor të numërohet
       vetëm një herë në ditë, përdorim një kod të përkohshëm të krijuar nga adresa dhe shfletuesi yt bashkë me një çelës që
       ndryshon çdo ditë dhe fshihet. Adresën (IP) nuk e ruajmë, dhe të nesërmen kodi nuk mund të lidhet më me ty.</p>
+    <h2>Kursimet e mia</h2>
+    <p>Kur kalon nga shporta te një dyqan, ky shfletues shënon produktin, çmimin dhe sa më pak kërkon ai dyqan se më i shtrenjti,
+      që te "Lista ime" të shohësh kursimin e mundshëm. Ruhet vetëm në shfletuesin tënd (localStorage) dhe nuk na dërgohet kurrë.</p>
     <h2>Numri i klikimit</h2>
     <p>Linku që të çon te dyqani ka një numër të rastësishëm klikimi (sp_click), krahas shenjës utm_source=shporta. Ai nuk lidhet me ty:
       nuk ruajmë adresën tënde, as cookie, as emër. Një dyqan që bashkëpunon me ne mund të na thotë vetëm "porosia nga ky klikim u krye",
