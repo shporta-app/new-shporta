@@ -1,0 +1,69 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<!-- 1280x800 store screenshot: the real extension panel (extension/content.js) with real prices from /api/lookup.
+     Served from the project root: python -m http.server 8811, then open /brand/store-shot.html -->
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=block" rel="stylesheet">
+<style>
+body { margin: 0; width: 1280px; height: 800px; overflow: hidden; background: #14121F; color: #fff;
+       font-family: "Bricolage Grotesque", sans-serif; display: grid; grid-template-columns: 470px 1fr; }
+.l { padding: 72px 0 64px 72px; display: flex; flex-direction: column; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand svg { width: 56px; height: 56px; }
+.word { font-weight: 800; font-size: 48px; letter-spacing: -.045em; line-height: 1; display: inline-flex; align-items: baseline; }
+.o { display: inline-block; width: .56em; height: .56em; border-radius: 50%; border: .13em solid #C6F432; box-sizing: border-box; margin: 0 .015em 0 .02em; }
+h1 { margin: auto 0 0; font-size: 46px; line-height: 1.04; letter-spacing: -.03em; font-weight: 800; }
+h1 span { color: #C6F432; }
+p { margin: 22px 0 0; font-size: 21px; line-height: 1.4; color: #A7A2B8; font-weight: 500; max-width: 360px; }
+.win { margin: 56px 0 56px 24px; border-radius: 16px 0 0 16px; background: #F4F3F8; overflow: hidden; position: relative;
+       transform: translateZ(0); /* the panel is position:fixed; this makes it sit inside the window */ }
+.bar { height: 44px; background: #E6E4EE; display: flex; align-items: center; gap: 8px; padding: 0 18px; }
+.bar i { width: 12px; height: 12px; border-radius: 50%; background: #CFCBDB; }
+.bar u { margin-left: 18px; height: 24px; width: 360px; border-radius: 12px; background: #fff; text-decoration: none; }
+.page { display: grid; grid-template-columns: 260px 1fr; gap: 28px; padding: 32px 30px; }
+.img { height: 300px; border-radius: 14px; background: #fff; display: grid; place-items: center; }
+.img b { width: 92px; height: 190px; border-radius: 14px 14px 22px 22px; background: linear-gradient(#fff, #EEF3FA); border: 2px solid #DCE4F0; }
+.k { height: 14px; border-radius: 7px; background: #DEDBE7; margin-bottom: 14px; }
+</style></head>
+<body>
+<div class="l">
+  <div class="brand">{MARK}<span class="word">shp<i class="o"></i>rta</span></div>
+  <h1>Je duke blerë?<br><span>shporta të tregon ku kushton më pak.</span></h1>
+  <p>I njëjti produkt, në të njëjtën madhësi, në dyqanet online shqiptare.</p>
+</div>
+<div class="win" id="win">
+  <div class="bar"><i></i><i></i><i></i><u></u></div>
+  <div class="page">
+    <div class="img"><b></b></div>
+    <div><div class="k" style="width:80%;height:22px"></div><div class="k" style="width:55%;height:22px"></div>
+      <div class="k" style="width:30%;margin-top:26px;height:20px"></div>
+      <div class="k" style="width:90%;margin-top:30px"></div><div class="k" style="width:85%"></div><div class="k" style="width:60%"></div></div>
+  </div>
+</div>
+<script type="application/ld+json">{"@type":"Product","name":"CeraVe Moisturizing Cream 177ml","offers":{"price":"{PRICE}","priceCurrency":"ALL"}}</script>
+<script>
+const DATA = {DATA};
+const SHOP = "{SHOP}";
+let listener;
+window.chrome = {
+  runtime: {
+    getURL: (p) => "/extension/" + p,
+    sendMessage: (msg, cb) => cb && cb(msg.type === "lookup" ? { ok: true, data: DATA } : {}),
+    onMessage: { addListener: (f) => { listener = f; } },
+    lastError: null,
+  },
+  storage: { local: { get: (k, cb) => cb({}), set: () => {} } },
+};
+</script>
+<script src="/extension/content.js"></script>
+<script>
+// content.js shows the small pill on load; open it the way a shopper would, with a click
+setTimeout(() => {
+  const host = document.getElementById("shporta-host");
+  host.shadowRoot.querySelector(".pill").click();
+  document.getElementById("win").append(host);
+  // the page in the picture is that shop's product page
+  for (const n of host.shadowRoot.querySelectorAll(".n")) n.textContent = n.textContent.replace(location.hostname, SHOP);
+  for (const b of host.shadowRoot.querySelectorAll(".ft button")) b.textContent = b.textContent.replace(location.hostname, SHOP);
+}, 1200);
+</script>
+</body></html>
