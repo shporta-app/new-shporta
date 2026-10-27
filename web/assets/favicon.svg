@@ -1,16 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="232" fill="#14121F"/>
-  <defs>
-    <mask id="i-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
-      <rect width="1024" height="1024" fill="#fff"/>
-      <circle r="34" fill="#000" transform="translate(-44 -74) rotate(-24 512 512) scale(0.94) translate(31 31) translate(318 512)"/>
-      <circle r="34" fill="#000" transform="translate(64 94) rotate(18 512 512) scale(0.94) translate(31 31) translate(318 512)"/>
-    </mask>
-    <clipPath id="i-a"><path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(-44 -74) rotate(-24 512 512) scale(0.94) translate(31 31)"/></clipPath>
-  </defs>
-  <g transform="translate(-11 2)">
-    <g mask="url(#i-holes)">
-      <path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(64 94) rotate(18 512 512) scale(0.94) translate(31 31)" fill="#7B4DFF"/>
-      <path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(-44 -74) rotate(-24 512 512) scale(0.94) translate(31 31)" fill="#C6F432"/>
-      <g clip-path="url(#i-a)"><path d="M300 352 H760 Q820 352 820 412 V612 Q820 672 760 672 H300 L162 526 Q150 512 162 498 Z" transform="translate(64 94) rotate(18 512 512) scale(0.94) translate(31 31)" fill="#FFFFFF"/></g>
-    </g>
-  </g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#14121F"/><g transform="translate(8.0 8.5) scale(0.84)"><path d="M32 38 C32 13 68 13 68 38" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><path d="M9 38 H91 L81 83 a5 5 0 0 1 -5 4 H24 a5 5 0 0 1 -5 -4 Z" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linejoin="round"/><rect x="29" y="53" width="42" height="17" rx="8.5" fill="#C6F432"/></g></svg>
