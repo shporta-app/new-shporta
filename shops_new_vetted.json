@@ -97,7 +97,7 @@
   "products_estimate": 131,
   "adapter": "woocommerce",
   "verdict": "ok",
-  "reason": "woocommerce API answers; robots allows; ToS checked, no scraping ban"
+  "reason": "woocommerce API answers; robots allows; ToS checked, no scraping ban; the server gets a SiteGround captcha, so the PC collects it (pc_only.txt)"
  },
  {
   "domain": "mi.al",
@@ -123,7 +123,7 @@
   "products_estimate": 2167,
   "adapter": "woocommerce",
   "verdict": "ok",
-  "reason": "woocommerce API answers; robots allows; no ToS page found to check"
+  "reason": "woocommerce API answers; robots allows; no ToS page found to check; the server gets a SiteGround captcha, so the PC collects it (pc_only.txt)"
  },
  {
   "domain": "pcstore.al",
@@ -692,8 +692,8 @@
   "crawl_delay": null,
   "products_estimate": 557,
   "adapter": "jsonld",
-  "verdict": "ok",
-  "reason": "JSON-LD markup on homepage, robots allows; ToS checked, no scraping ban; verify Product JSON-LD on product pages before scraping"
+  "verdict": "excluded",
+  "reason": "sells e-books only (schema.org Book, bookFormat Ebook); an e-book is not the same product as a printed book, so no exact comparison"
  },
  {
   "domain": "mythic.al",

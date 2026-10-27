@@ -6,6 +6,7 @@ the homepage and one tiny API call per platform check.
 import json
 import re
 import sys
+import time
 import urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,6 +16,7 @@ import requests
 UA = "PhiaALBot/0.1 (+price comparison for Albanian shoppers)"
 HERE = Path(__file__).parent
 TIMEOUT = 15
+SLOW_PAUSE = 30  # seconds between shops in --slow mode
 
 # Paths the scraper would request, per platform.
 PLATFORM_PATHS = {
@@ -57,7 +59,7 @@ def probe(domain):
     html = home.text[:400_000] if out["alive"] else ""
 
     # WAF / bot challenge markers: if present we stop and treat the shop as off-limits.
-    waf = re.search(r"cf-chl-opt|safeline|<title>Just a moment|Attention Required! \| Cloudflare", html, re.I)
+    waf = re.search(r"cf-chl-opt|safeline|sgcaptcha|<title>Just a moment|Attention Required! \| Cloudflare", html, re.I)
     out["bot_challenge"] = bool(waf) or home.status_code in (403, 429, 503)
 
     # robots.txt
@@ -112,10 +114,24 @@ def probe(domain):
 
 
 def main():
-    shops = load_shops(sys.argv[1] if len(sys.argv) > 1 else HERE / "shops.txt")
-    with ThreadPoolExecutor(8) as ex:
-        results = list(ex.map(probe, shops))
-    (HERE / "probe.json").write_text(json.dumps(results, indent=1, ensure_ascii=False), encoding="utf-8")
+    # --slow: one shop at a time with a long pause, for shops that answered 429 to the parallel run.
+    # A second 429 is final: the shop stays out, we don't come back.
+    slow = "--slow" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--slow"]
+    shops = load_shops(args[0] if args else HERE / "shops.txt")
+    out = HERE / (args[1] if len(args) > 1 else "probe.json")
+    if slow:
+        results = []
+        for i, d in enumerate(shops):
+            if i:
+                time.sleep(SLOW_PAUSE)
+            results.append(probe(d))
+            out.write_text(json.dumps(results, indent=1, ensure_ascii=False), encoding="utf-8")
+            print(f"{i + 1}/{len(shops)} {d}: {results[-1].get('status', results[-1].get('error'))}", flush=True)
+    else:
+        with ThreadPoolExecutor(8) as ex:
+            results = list(ex.map(probe, shops))
+    out.write_text(json.dumps(results, indent=1, ensure_ascii=False), encoding="utf-8")
     for r in results:
         flags = []
         if not r["alive"]:

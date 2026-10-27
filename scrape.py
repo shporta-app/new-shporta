@@ -102,7 +102,7 @@ class Client:
                 if attempt == 2:
                     raise
                 continue
-            if r.status_code in (403, 429) or re.search(r"<title>Just a moment|cf-chl-opt|safeline", r.text[:5000], re.I):
+            if r.status_code in (403, 429) or re.search(r"<title>Just a moment|cf-chl-opt|safeline|sgcaptcha", r.text[:5000], re.I):
                 raise Blocked(f"{r.status_code} / bot challenge at {url}")
             if r.status_code in (502, 503, 504) and attempt < 2:
                 continue
