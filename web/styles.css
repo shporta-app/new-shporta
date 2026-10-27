@@ -308,6 +308,16 @@ kbd { font: 600 13px/1 var(--display); border: 1px solid var(--line); border-bot
 .consent .btn { padding: 11px 16px; font-size: 14px; }
 .consent .btn-ghost { color: var(--paper); border-color: rgba(255,255,255,.3); }
 .consent .btn-ghost:hover { background: rgba(255,255,255,.1); color: var(--paper); }
+.install { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 20; max-width: 520px; margin: 0 auto; display: flex; align-items: center; gap: 12px;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 18px; padding: 12px 12px 12px 14px; box-shadow: 0 12px 32px rgba(20,18,31,.18); }
+.install img { border-radius: 11px; flex: none; }
+.install p { margin: 0; font-size: 14px; line-height: 1.35; flex: 1; }
+.install strong { display: block; font: 700 15px/1.3 var(--display); }
+.install span { color: var(--muted); }
+.install div { display: flex; align-items: center; gap: 4px; flex: none; }
+.install .btn { padding: 10px 16px; font-size: 14px; }
+.install-x { border: 0; background: none; color: var(--muted); font-size: 24px; line-height: 1; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; }
+.install-x:hover { background: var(--soft); }
 @media (max-width: 640px) { .consent { flex-direction: column; align-items: stretch; } .consent div > * { flex: 1; } }
 
 .prose { max-width: 760px; }
@@ -462,7 +472,7 @@ dialog#report::backdrop { background: rgba(20, 18, 31, .45); }
   .tabbar .tab-basket b { position: absolute; top: 0; left: 50%; margin-left: 6px; font: 700 10px/1 var(--display); background: var(--lime);
     color: #14121F; border-radius: 999px; padding: 3px 5px; }
   .tabbar .tab-basket b:empty { display: none; }
-  .consent { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .consent, .install { bottom: calc(76px + env(safe-area-inset-bottom)); }
   /* the product page keeps the cheapest offer in reach */
   .on-product .buybar { display: flex; position: fixed; left: 10px; right: 10px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 24;
     align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 16px; border-radius: 18px;

@@ -1261,3 +1261,53 @@ watchBadge();
 basketBadge();
 consentBanner();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+/* ---------- Install on the phone ---------- */
+// Chrome, Edge and Samsung Internet hand us an install prompt; iPhone Safari has none, so there we explain the two taps.
+// The card shows once the cookie banner is gone, and stays away for 30 days after "Jo tani".
+let installPrompt = null;
+const INSTALL_KEY = "shporta-install-later";
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isPhone = () => matchMedia("(max-width: 860px)").matches;
+const installHelp = () => isIOS()
+  ? "Në Safari shtyp butonin Ndaj (katrori me shigjetë lart), pastaj “Add to Home Screen” / “Shto në ekranin bazë”."
+  : "Hap menynë e shfletuesit (⋮ lart djathtas), pastaj “Instalo aplikacionin” ose “Add to Home screen”.";
+
+function installCard(help) {
+  document.getElementById("install")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="install" id="install" role="dialog" aria-label="Shkarko aplikacionin">
+    <img src="/assets/icon-192.png?v=2" alt="" width="44" height="44">
+    <p><strong>shporta në telefon</strong><span>${help ? installHelp() : "Me një prekje nga ekrani. Falas."}</span></p>
+    <div>${help ? "" : '<button class="btn" type="button" data-install>Instalo</button>'}
+      <button class="install-x" type="button" data-install-later aria-label="Jo tani">×</button></div>
+  </div>`);
+}
+
+function maybeOfferInstall() {
+  if (isStandalone() || !isPhone() || document.getElementById("consent")) return;
+  try { if (Date.now() - Number(localStorage.getItem(INSTALL_KEY) || 0) < 30 * 864e5) return; } catch {}
+  if (installPrompt) installCard(false);
+  else if (isIOS() && /safari/i.test(navigator.userAgent) && !/crios|fxios|edgios/i.test(navigator.userAgent)) installCard(false);
+}
+
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; setTimeout(maybeOfferInstall, 4000); });
+window.addEventListener("appinstalled", () => { installPrompt = null; document.getElementById("install")?.remove(); });
+setTimeout(maybeOfferInstall, 6000);
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("[data-consent]")) setTimeout(maybeOfferInstall, 1500);
+  if (e.target.closest("[data-install-later]")) {
+    try { localStorage.setItem(INSTALL_KEY, String(Date.now())); } catch {}
+    document.getElementById("install")?.remove();
+  }
+  if (!e.target.closest("[data-install]")) return;
+  e.preventDefault();
+  if (isStandalone()) return;
+  if (installPrompt) {
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    installPrompt = null;
+    document.getElementById("install")?.remove();
+    if (outcome !== "accepted") try { localStorage.setItem(INSTALL_KEY, String(Date.now())); } catch {}
+  } else installCard(true);
+});

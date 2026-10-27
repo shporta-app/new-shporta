@@ -70,8 +70,16 @@ def main():
     png(regular, {EXT / "icon-128.png": 128, EXT / "icon-48.png": 48, OUT / "mark-1024.png": 1024})
     png(small, {EXT / "icon-32.png": 32, EXT / "icon-16.png": 16})
     # phones round and mask the icon themselves: full-bleed ink, mark inside the maskable safe zone
-    png(tile(scale=0.62, radius=0), {ASSETS / "icon-512.png": 512, ASSETS / "icon-192.png": 192,
-                                     ASSETS / "apple-touch-icon.png": 180, OUT / "instagram-avatar.png": 1080})
+    png(tile(scale=0.62, radius=0), {ASSETS / "icon-maskable-512.png": 512, ASSETS / "apple-touch-icon.png": 180,
+                                     OUT / "instagram-avatar.png": 1080})
+    # installed on a computer the icon is shown as is, so it keeps its own rounded corners
+    png(regular, {ASSETS / "icon-512.png": 512, ASSETS / "icon-192.png": 192})
+    # /favicon.ico for browsers and apps that never read the <link> tags
+    with tempfile.TemporaryDirectory() as tmp:
+        sizes = {Path(tmp) / f"{px}.png": px for px in (16, 32, 48)}
+        png(small, sizes)
+        imgs = [Image.open(f) for f in sizes]
+        imgs[-1].save(ROOT / "web" / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)], append_images=imgs[:-1])
 
     og = (ROOT / "brand" / "og.html").read_text(encoding="utf-8").replace("{MARK}", regular)
     shoot(og, 1200, 630, ASSETS / "og.png")
