@@ -5,8 +5,10 @@
 Tables:
   products  current offers with match key, size and our category
   matches   product -> group (same product in 2+ shops, from match.py)
-  items     what the website lists: one row per matched product (all its shops) or per single product page
-            (variants of one page collapsed), with lowest/highest price and how many shops sell it.
+  items     what the website lists: one row per product sold by 2+ shops (the same product in the same size), with
+            lowest/highest price and how many shops sell it. shporta compares identical products; it is not a
+            catalogue, so a product only one shop sells is not listed. The only single-shop rows kept are the ones a
+            dupe points to (dupes.py), shown only in the dupes section.
             Prices, the cheapest and "save up to" count only offers whose title states the product's size
             (products.in_compare = 1); shops that sell the product without stating the size are listed apart
             (extra_shops) and never count as the cheapest.
@@ -229,17 +231,24 @@ def main():
 
     dst.executemany(f"INSERT INTO products VALUES ({','.join('?' * len(rows[0]))})", rows)
     dst.executemany("INSERT INTO items VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", items)
+    n_pairs, n_orig, kinds = dupes.build(dst)  # cheaper alternatives to expensive products (dupes.py)
+    print(f"dupes: {n_pairs} pairs for {n_orig} products {kinds}")
+    # not a catalogue: a product only one shop sells has nothing to compare, so it isn't listed. Kept only where a
+    # dupe points to it. Its offers stay in `products` (the extension still recognises that shop's page).
+    dst.execute("DELETE FROM items WHERE shops < 2 AND id NOT IN (SELECT item_id FROM dupes UNION SELECT dupe_id FROM dupes)")
+    kept = {r[0] for r in dst.execute("SELECT id FROM items")}
+    items = [i for i in items if i[0] in kept]
     # barcodes -> products, for "Skano" (scan a barcode in a shop or at home and see every shop's price)
     item_of_pid = {r[0]: r[14] for r in rows}
     codes = set()
     for pid, code in src.execute("SELECT id, gtin FROM products WHERE gtin IS NOT NULL AND gtin != ''"):
         g = valid_gtin(code)
-        if g and pid in item_of_pid:
+        if g and item_of_pid.get(pid) in kept:
             codes.add((g, item_of_pid[pid]))
     dst.execute("CREATE TABLE barcodes (gtin TEXT, item TEXT, PRIMARY KEY (gtin, item))")
     dst.executemany("INSERT INTO barcodes VALUES (?,?)", codes)
     dst.execute("CREATE TABLE item_history (id TEXT PRIMARY KEY, h TEXT)")
-    dst.executemany("INSERT INTO item_history VALUES (?,?)", item_history(src, rows, latest[:10], {i[0]: i[6] for i in items}))
+    dst.executemany("INSERT INTO item_history VALUES (?,?)", [h for h in item_history(src, rows, latest[:10], {i[0]: i[6] for i in items}) if h[0] in kept])
     dst.executemany("INSERT INTO matches VALUES (?,?)", group_of.items())
     dst.executemany("INSERT INTO shops VALUES (?,?,?)",
                     src.execute("SELECT domain, category, products FROM shops WHERE status IN ('ok','error')"))
@@ -259,8 +268,6 @@ def main():
         INSERT INTO item_search(item_search) VALUES('rebuild');
     """)
     dst.commit()
-    n_pairs, n_orig, kinds = dupes.build(dst)  # cheaper alternatives to expensive products (dupes.py)
-    print(f"dupes: {n_pairs} pairs for {n_orig} products {kinds}")
     dst.execute("VACUUM")
     dst.close()
     with open(OUT, "rb") as f, gzip.open(str(OUT) + ".gz", "wb", compresslevel=9) as g:

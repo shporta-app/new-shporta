@@ -235,7 +235,8 @@ async function pageHome() {
   <section class="hero"><div class="wrap hero-in">
     <div>
       <h1>i njëjti produkt, çmime të ndryshme</h1>
-      <p>Shiko sa kushton një produkt në çdo dyqan online në Shqipëri, para se ta blesh. Kozmetikë, parfume, veshje, teknologji, shtëpi, libra, lodra dhe më shumë.</p>
+      <p>Shiko sa kushton i njëjti produkt në çdo dyqan online në Shqipëri që e shet, para se ta blesh: ${esc(d.categories.filter((c) => c.count >= 100)
+        .sort((a, b) => b.count - a.count).slice(0, 5).map((c) => c.label.toLowerCase()).join(", "))}.</p>
       ${searchForm("q-hero")}
       <div class="hero-stats">
         <span><b class="num">${s.offers.toLocaleString("en").replace(/,/g, " ")}</b>çmime</span>
@@ -250,13 +251,6 @@ async function pageHome() {
 
   ${impactSection(d)}
 
-  ${d.dupes && d.dupes.length ? `<section class="section"><div class="wrap">
-    <div class="section-head"><h2>dupe të produkteve të shtrenjta</h2><a href="/dupe" data-link>Të gjitha dupe</a></div>
-    <p class="lead">Jo i njëjti produkt, por bën të njëjtën punë për shumë më pak. Te parfumet, dyqani vetë thotë nga cili parfum është frymëzuar;
-      te kujdesi i lëkurës, përbërësi kryesor dhe përqindja janë të njëjta; te grimi, janë dupe që krahasohen gjerësisht.</p>
-    <div class="dps">${d.dupes.slice(0, 6).map((r) => dupePair(r)).join("")}</div>
-  </div></section>` : ""}
-
   <section class="section"><div class="wrap">
     <div class="section-head"><h2>diferencat më të mëdha tani</h2></div>
     <p class="lead">I njëjti produkt, në stok në të paktën tre dyqane. Përqindja tregon sa më lirë është te dyqani më i lirë.</p>
@@ -265,17 +259,24 @@ async function pageHome() {
 
   <section class="section"><div class="wrap">
     <h2>kategoritë</h2>
-    <p class="lead">Çdo produkt që gjetëm, i renditur sipas llojit.</p>
+    <p class="lead">Produktet që gjenden në dy ose më shumë dyqane, të renditura sipas llojit.</p>
     <div class="cats">${d.categories.filter((c) => c.count).map((c) =>
       `<a href="/kategori/${c.id}" data-link>${esc(c.label)}<span>${c.count.toLocaleString("en").replace(/,/g, " ")}</span></a>`).join("")}</div>
   </div></section>
+
+  ${d.dupes && d.dupes.length ? `<section class="section"><div class="wrap">
+    <div class="section-head"><h2>dupe të produkteve të shtrenjta</h2><a href="/dupe" data-link>Të gjitha dupe</a></div>
+    <p class="lead">Jo i njëjti produkt, por bën të njëjtën punë për shumë më pak. Te parfumet, dyqani vetë thotë nga cili parfum është frymëzuar;
+      te kujdesi i lëkurës, përbërësi kryesor dhe përqindja janë të njëjta; te grimi, janë dupe që krahasohen gjerësisht.</p>
+    <div class="dps">${d.dupes.slice(0, 3).map((r) => dupePair(r)).join("")}</div>
+  </div></section>` : ""}
 
   <section class="section"><div class="wrap">
     <div class="band">
       <div><h2>kontrollo çmimin kudo që blen</h2>
         <p>Shtesa e shportës për shfletuesin hapet vetë kur shikon një produkt në një dyqan online dhe të tregon nëse çmimi është i mirë, normal apo i lartë, dhe ku e gjen më lirë.</p>
         <a class="btn" href="/shtesa" data-link>Si ta instalosh</a></div>
-      <ol><li>Hap një produkt në çdo dyqan online, edhe në Zara apo Mango.</li>
+      <ol><li>Hap një produkt në një dyqan online shqiptar.</li>
         <li>Shporta krahason çmimin me dyqanet e tjera.</li>
         <li>Blej aty ku është më lirë.</li></ol>
     </div>
@@ -338,7 +339,6 @@ async function pageCategory(cat, params) {
         ${opt("compared", "Në më shumë dyqane", q.get("sort") || "compared")}${opt("gap", "Diferenca më e madhe", q.get("sort"))}
         ${opt("cheap", "Më të lirat", q.get("sort"))}${opt("dear", "Më të shtrenjtat", q.get("sort"))}</select></label>
       <label>Dyqani <select name="shop"><option value="">Të gjitha</option>${d.shops.map((s) => opt(s, shopName(s), q.get("shop"))).join("")}</select></label>
-      <label><input type="checkbox" name="compared" value="1" ${q.get("compared") === "1" ? "checked" : ""}> Vetëm në 2+ dyqane</label>
     </form>
     ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
       : `<div class="empty"><b>Asnjë produkt me këto filtra.</b>Hiq një filtër ose zgjidh një dyqan tjetër.</div>`}

@@ -86,14 +86,16 @@ def home(srv):
     cats = "".join(f'<li><a href="/kategori/{e(c["id"])}">{e(c["label"])}</a> ({num(c["count"])} produkte)</li>'
                    for c in h["categories"] if c["count"])
     deals = "".join(item_li(d) for d in h["deals"][:16])
+    # only the kinds of products we actually compare today (2+ shops), most first
+    kinds = ", ".join(c["label"].lower() for c in sorted(h["categories"], key=lambda c: -c["count"]) if c["count"] >= 100)
     imp = h.get("impact")
     fact = (f"<p>Për {num(imp['products'])} produkte që i shesin 3 ose më shumë dyqane, dyqani më i shtrenjtë kërkon zakonisht "
             f"{imp['median_more_pct']}% më shumë se më i liri, për të njëjtin produkt në të njëjtën madhësi.</p>") if imp else ""
     body = f"""<div class="wrap">
 <h1>shporta: krahaso çmimet në dyqanet online shqiptare</h1>
 <p>I njëjti produkt, në të njëjtën madhësi, kushton ndryshe në dyqane të ndryshme. shporta krahason çdo ditë
-{num(s['offers'])} çmime nga {s['shops']} dyqane online në Shqipëri: kozmetikë, parfume, veshje, këpucë, syze, ora, teknologji, elektroshtëpiake, shtëpi e kuzhinë, libra, fëmijë, shëndet, kafshë dhe auto.
-{num(s['compared'])} produkte i gjejmë në dy ose më shumë dyqane.</p>{fact}
+{num(s['offers'])} çmime nga {s['shops']} dyqane online në Shqipëri dhe tregon {num(s['compared'])} produkte që i gjejmë
+në dy ose më shumë dyqane, kryesisht: {e(kinds)}.</p>{fact}
 <form action="/kerko" role="search"><label>Kërko produkt ose markë <input name="q" type="search"></label></form>
 <h2>Kategoritë</h2><ul>{cats}</ul>
 <h2>Diferencat më të mëdha sot</h2><ul>{deals}</ul>
@@ -106,8 +108,8 @@ def home(srv):
             "inLanguage": "sq", "publisher": {"@id": BASE + "/#org"}, "description": TAGLINE + ".",
             "potentialAction": {"@type": "SearchAction", "target": {"@type": "EntryPoint", "urlTemplate": BASE + "/kerko?q={search_term_string}"},
                                 "query-input": "required name=search_term_string"}}
-    desc = (f"Krahaso çmimet e të njëjtit produkt në {s['shops']} dyqane online shqiptare: kozmetikë, parfume, veshje, "
-            f"teknologji, shtëpi, libra dhe më shumë. Gjej ku kushton më lirë sot. Falas, çdo ditë.")
+    desc = (f"Krahaso çmimet e të njëjtit produkt në {s['shops']} dyqane online shqiptare: {kinds}. "
+            f"Gjej ku kushton më lirë sot. Falas, çdo ditë.")
     return 200, page_html("shporta: krahaso çmimet në dyqanet online të Shqipërisë", desc, "/", body, data=[org, site])
 
 
@@ -212,7 +214,7 @@ def categories(srv):
     lis = "".join(f'<li><a href="/kategori/{e(c["id"])}">{e(c["label"])}</a>: {num(c["count"])} produkte</li>' for c in h["categories"] if c["count"])
     body = f'<div class="wrap"><h1>Kategoritë</h1><ul>{lis}</ul></div>'
     return 200, page_html("Kategoritë: krahaso çmimet sipas kategorisë | shporta",
-                          "Kozmetikë, parfume, grim, flokë, veshje, këpucë, syze, ora, bizhuteri dhe produkte për fëmijë: krahaso çmimet në dyqanet online shqiptare.",
+                          "Kozmetikë, parfume, grim, flokë dhe produkte për fëmijë: krahaso çmimet e të njëjtit produkt në dyqanet online shqiptare.",
                           "/kategorite", body, data=[breadcrumbs(("shporta", "/"), ("Kategoritë", "/kategorite"))])
 
 
@@ -385,7 +387,7 @@ def urlset(urls, lastmod):
 
 
 def page_urls(srv):
-    cats = [r[0] for r in srv.db().execute("SELECT cat FROM items GROUP BY cat HAVING COUNT(*) > 0")]
+    cats = [r[0] for r in srv.db().execute("SELECT cat FROM items WHERE shops >= 2 GROUP BY cat")]
     return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia")] + \
            [f"{BASE}/kategori/{c}" for c in cats] + [f"{BASE}/raport/{m}" for m in srv.report_months()]
 
@@ -419,7 +421,7 @@ def llms_txt(srv):
     updated = s.get("updated") or ""
     return f"""# shporta
 
-> shporta.app is a free price comparison website for Albania. Every day it collects the prices that Albanian online shops publish (cosmetics, perfume, clothing, shoes, eyewear, watches, jewellery, electronics, home appliances, home and kitchen, books, toys and baby, health and supplements, pets, car parts), finds the exact same product in the same size across shops, and shows where it is cheapest today. Prices are in Albanian lek (ALL). shporta does not sell anything; every price links to the shop.
+> shporta.app is a free price comparison website for Albania. Every day it collects the prices that Albanian online shops publish, finds the exact same product in the same size across shops, and shows where it is cheapest today. It lists only products that two or more shops sell; it is not a catalogue of any one shop. Prices are in Albanian lek (ALL). shporta does not sell anything; every price links to the shop.
 
 Key facts (updated {updated[:10]}):
 - {num(s['offers'])} prices from {s['shops']} Albanian online shops; {num(s['compared'])} products found in two or more shops.

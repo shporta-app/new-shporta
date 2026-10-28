@@ -144,6 +144,16 @@ def page_num(q):
         return 0
 
 
+# what the site lists: the same product sold by 2+ shops. shporta compares, it is not a catalogue of one shop's
+# products (the only single-shop items in the data are dupes, shown only in the dupes section)
+LISTED = "shops >= 2"
+
+
+def listed_ids(ids):
+    ids = list(ids)
+    return {r[0] for r in db().execute(f"SELECT id FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(ids))})", ids)}         if ids else set()
+
+
 def item_rows(sql, args):
     return [dict(r) for r in db().execute(sql, args)]
 
@@ -176,7 +186,7 @@ def home():
                              ORDER BY in_stock_shops DESC, save_pct DESC LIMIT 12""", ())
     for f in featured:
         f["offers"] = offers_for(f["id"])
-    cats = {c: n for c, n in db().execute("SELECT cat, COUNT(*) FROM items GROUP BY cat")}
+    cats = {c: n for c, n in db().execute(f"SELECT cat, COUNT(*) FROM items WHERE {LISTED} GROUP BY cat")}
     top = {k: [r for r in dupe_list({"kind": k})["items"] if r["orig_image"]] for k in ("inspired", "active", "known")}
     picks = [r for trio in zip(top["inspired"][:4], top["known"][:4] or [None] * 4, top["active"][:4]) for r in trio if r][:9]
     return {"stats": stats, "deals": deals, "featured": featured, "impact": impact(), "routine": routine(), "dupes": picks,
@@ -343,9 +353,7 @@ SORTS = {"compared": "shops DESC, save_pct DESC", "cheap": "min_price ASC", "dea
 def category(cat, q):
     if cat not in CATEGORIES and cat != "tjeter":
         return None
-    where, args = ["cat = ?"], [cat]
-    if q.get("compared") == "1":
-        where.append("shops >= 2")
+    where, args = ["cat = ?", LISTED], [cat]
     if q.get("shop"):
         where.append("id IN (SELECT item_id FROM products WHERE shop = ?)")
         args.append(q["shop"])
@@ -356,7 +364,8 @@ def category(cat, q):
     items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {sql} ORDER BY {order} LIMIT ? OFFSET ?",
                       args + [PAGE_SIZE, page * PAGE_SIZE])
     shops = [r[0] for r in db().execute(
-        "SELECT shop FROM products WHERE cat = ? GROUP BY shop ORDER BY COUNT(*) DESC LIMIT 40", (cat,))]
+        f"""SELECT p.shop FROM products p JOIN items i ON i.id = p.item_id WHERE i.cat = ? AND i.{LISTED} AND p.in_compare = 1
+            GROUP BY p.shop ORDER BY COUNT(*) DESC LIMIT 40""", (cat,))]
     return {"id": cat, "label": CATEGORIES.get(cat, "Të tjera"), "total": total, "page": page,
             "page_size": PAGE_SIZE, "items": items, "shops": shops}
 
@@ -367,8 +376,11 @@ DUPE_COLS = """x.kind, x.reason, x.save_pct, x.orig_price, x.dupe_price, x.orig_
 DUPE_FROM = "FROM dupes x JOIN items o ON o.id = x.item_id JOIN items d ON d.id = x.dupe_id"
 
 
-def dupes_of(item_id, limit=8):
-    return item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.item_id = ? ORDER BY x.save_pct DESC LIMIT ?", (item_id, limit))
+def dupes_of(item_id, limit=3):
+    """The closest dupes first (dupes.py keeps at most three per product): the strongest evidence, then the saving."""
+    return item_rows(f"""SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.item_id = ?
+                         ORDER BY CASE x.kind WHEN 'inspired' THEN 0 WHEN 'known' THEN 1 ELSE 2 END, x.save_pct DESC LIMIT ?""",
+                     (item_id, limit))
 
 
 def originals_of(item_id):
@@ -404,17 +416,19 @@ def item(item_id):
         f"SELECT {COLS} FROM products WHERE item_id = ? AND in_compare = 0", (item_id,))]) if o["shop"] not in main_shops]
     first = db().execute("SELECT name_key FROM products WHERE item_id = ? LIMIT 1", (item_id,)).fetchone()
     cur = it["currency"]
-    sim = similar(first[0] if first else "", it["min_price"], cur, limit=12)
+    sim = similar(first[0] if first else "", it["min_price"], cur, limit=20)
     # the same product name in other sizes (or other single listings): their own list, never "similar"
     same = [r[0] for r in db().execute("SELECT DISTINCT item_id FROM products WHERE name_key = ? AND item_id != ? LIMIT 12",
                                        (first[0], item_id))] if first and len(first[0].split()) >= 2 else []
-    it["other_sizes"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(same))})", same) if same else []
+    it["other_sizes"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(same))})",
+                                  same) if same else []
     seen, out = {item_id} | set(same), []
     for o in sim:
         if o["item_id"] not in seen:
             seen.add(o["item_id"])
             out.append(o["item_id"])
-    it["similar"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(out))})", out) if out else []
+    it["similar"] = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(out))})",
+                              out)[:8] if out else []
     it["category_label"] = CATEGORIES.get(it["cat"], "Të tjera")
     it["tracked_since"] = TRACKED_SINCE  # the first day of price history: claims about "lowest" only reach back to it
     it["used"] = any(o["shop"] in SECOND_HAND for o in it["offers"])
@@ -459,7 +473,7 @@ def vocabulary():
     global _vocab
     if _vocab is None:
         n = collections.Counter()
-        for (t,) in db().execute("SELECT search FROM items WHERE shops >= 2 OR in_stock_shops >= 1"):
+        for (t,) in db().execute(f"SELECT search FROM items WHERE {LISTED}"):
             n.update(set(re.findall(r"[a-z0-9]{4,}", t)))
         _vocab = {w: c for w, c in n.items() if c >= 3}
     return _vocab
@@ -481,7 +495,7 @@ def search_items(words, limit):
             # UNION for a word's synonyms, INTERSECT across words. The LIKEs on items stay the rule.
             long_parts.append(" UNION ".join("SELECT rowid FROM item_search WHERE search LIKE ?" for _ in alts))
             long_args += [f"%{a}%" for a in alts]
-    sql_where = " AND ".join(where)
+    sql_where = " AND ".join(where + [LISTED])
     if long_parts:
         sql_where = f"rowid IN ({' INTERSECT '.join(long_parts)}) AND {sql_where}"
         args = long_args + args
@@ -559,7 +573,8 @@ def barcode(code):
         ids = [r[0] for r in db().execute("SELECT item FROM barcodes WHERE gtin = ?", (g,))]
     except sqlite3.OperationalError:  # a data file from before barcodes
         ids = []
-    items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE id IN ({','.join('?' * len(ids))}) ORDER BY shops DESC, in_stock_shops DESC",
+    items = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(ids))})
+                          ORDER BY shops DESC, in_stock_shops DESC""",
                       ids) if ids else []
     return {"code": g.lstrip("0"), "valid": True, "items": items}
 
@@ -708,7 +723,8 @@ def lookup(title, price=None, currency="ALL", url="", gtin=""):
         if v and q["price"] and v["shops"] >= 2 and q["price"] < v["median"] * 0.65:
             out["risk"] = True  # far below every other shop for the same product: a fake, a used one or another size?
         if item_id:  # shops selling it without stating the size: only counted, the product page lists them
-            out["unconfirmed"] = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()[0] or 0
+            row = db().execute("SELECT extra_shops FROM items WHERE id = ?", (item_id,)).fetchone()
+            out["unconfirmed"] = (row[0] or 0) if row else 0
         # the same product name at shops not in the comparison: they don't state the size, or sell another size.
         # Listed with each shop's own size, never compared on price, and never shown as "similar".
         taken = {o["shop"] for o in offers} | {page_host}
@@ -716,10 +732,12 @@ def lookup(title, price=None, currency="ALL", url="", gtin=""):
                     f"SELECT {COLS} FROM products WHERE name_key = ? AND currency = ?", (key, currency))])
                 if o["shop"].removeprefix("www.") not in taken and o["shop"] not in taken and o["shop"] not in SECOND_HAND]
         out["same_name"] = [public(o) for o in same[:12]] if len(key.split()) >= 2 else []
-        if not offers:
-            out["similar"] = [public(o) for o in similar(key, price, currency)
-                              if o["shop"].removeprefix("www.") != page_host and o["name_key"] != key]
-        out["dupes"] = dupes_of(item_id, limit=4) if item_id else page_dupes(title, price, currency, offers)
+        if not offers:  # only products we compare (2+ shops): never one shop's own product as an advert
+            sim = [o for o in similar(key, price, currency, limit=30)
+                   if o["shop"].removeprefix("www.") != page_host and o["name_key"] != key]
+            ok = listed_ids({o["item_id"] for o in sim})
+            out["similar"] = [public(o) for o in sim if o["item_id"] in ok][:8]
+        out["dupes"] = dupes_of(item_id) if item_id else page_dupes(title, price, currency, offers)
         return out
 
     def compared(item_id):
@@ -810,7 +828,7 @@ def page_dupes(title, price, currency, offers):
     """Dupes for the product on the shopper's page: the known ones when we have the product, otherwise skincare
     with the same active at the same strength in the same kind of product, 30%+ cheaper (same rule as dupes.py)."""
     if offers and offers[0].get("item_id"):
-        rows = dupes_of(offers[0]["item_id"], limit=4)
+        rows = dupes_of(offers[0]["item_id"])
         if rows:
             return rows
     if not price or currency != "ALL":
@@ -820,25 +838,23 @@ def page_dupes(title, price, currency, offers):
     for reason, orig_id in db().execute("SELECT DISTINCT reason, item_id FROM dupes WHERE kind = 'inspired'"):
         name = [w for w in re.findall(r"[a-z0-9]+", dupes.fold(reason.split(" nga ", 1)[-1])) if w not in dupes.GENDER]
         if len(name) >= 2 and all(w in words for w in name):
-            rows = [r for r in dupes_of(orig_id, limit=4) if r["dupe_price"] <= price * 0.7]
+            rows = [r for r in dupes_of(orig_id) if r["dupe_price"] <= price * 0.7]
             if rows:
                 return rows
     m = dupes.ACTIVE_RE.search(dupes.fold(title))
-    kind = dupes.kind_of(title)
+    acts, kind = dupes.actives(title), dupes.kind_of(title)
     if not (m and kind):
         return []
-    act, pct = m.group(1), float(m.group(2).replace(",", "."))
     out = []
     for it in item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE cat = 'lekure' AND currency = 'ALL' AND in_stock_shops >= 1
                             AND search LIKE ? AND search LIKE ? AND min_price <= ? ORDER BY min_price LIMIT 300""",
-                        (f"%{act}%", f"%{m.group(2)}%", price * 0.7)):
-        mm = dupes.ACTIVE_RE.search(dupes.fold(it["title"]))
-        if mm and mm.group(1) == act and float(mm.group(2).replace(",", ".")) == pct and dupes.kind_of(it["title"]) == kind \
-                and dupes.first_word(it["title"]) != dupes.first_word(title):
-            out.append({"kind": "active", "reason": f"{dupes.ACTIVES[act]} {pct:g}%", "dupe_id": it["id"],
+                        (f"%{m.group(1)}%", f"%{m.group(2)}%", price * 0.7)):
+        if dupes.actives(it["title"]) == acts and dupes.kind_of(it["title"]) == kind \
+                and not dupes.same_brand(it["title"], title):
+            out.append({"kind": "active", "reason": dupes.reason(acts), "dupe_id": it["id"],
                         "dupe_title": it["title"], "dupe_image": it["image"], "dupe_price": it["min_price"],
                         "save_pct": round((1 - it["min_price"] / price) * 100)})
-        if len(out) == 4:
+        if len(out) == 3:
             break
     return out
 

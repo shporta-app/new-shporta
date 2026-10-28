@@ -96,21 +96,41 @@ def active_pairs(items):
     for it in items:
         if it["cat"] != "lekure":
             continue
-        t = fold(it["title"])
-        m = ACTIVE_RE.search(t)
+        acts = actives(it["title"])
         k = kind_of(it["title"])
-        if m and k:
-            act = ACTIVES[m.group(1)]
-            pct = f"{float(m.group(2).replace(',', '.')):g}"  # "10" stays 10, "0.30" becomes 0.3
-            groups[(act, pct, k)].append(it)
+        if acts and k:
+            groups[(acts, k)].append(it)
     pairs = []
-    for (act, pct, k), its in groups.items():
+    for (acts, k), its in groups.items():
         for orig in its:
             for d in its:
-                if d is orig or first_word(d["title"]) == first_word(orig["title"]):
+                if d is orig or same_brand(d["title"], orig["title"]):
                     continue  # another brand only
-                pairs.append((orig, d, "active", f"{act} {pct}%"))
+                pairs.append((orig, d, "active", reason(acts)))
     return pairs
+
+
+def actives(title):
+    """Every key active with its strength: {("Niacinamide", "10"), ("Zinc", "1")}. A dupe must have all of them,
+    at the same strengths (an AHA 30% + BHA 2% peel is not a BHA 2% toner)."""
+    t = fold(title)
+    known = {(ACTIVES[m.group(1)], pct(m.group(2))) for m in ACTIVE_RE.finditer(t)}
+    # a strength we can't name ("+ Zinc 4%", "2%BHA") still counts: it must be there in both
+    other = {("", pct(n)) for n in re.findall(r"(\d+(?:[.,]\d+)?)\s*%", t)} - {("", p) for _, p in known}
+    return frozenset(known | other) if known else frozenset()
+
+
+def reason(acts):
+    return " + ".join(f"{a} {p}%" for a, p in sorted(acts) if a)
+
+
+def pct(n):
+    return f"{float(n.replace(',', '.')):g}"  # "10" stays 10, "0.30" becomes 0.3
+
+
+def same_brand(a, b):
+    """The same brand, also when spelled two ways ("K-SECRET" / "Ksecret")."""
+    return first_word(a) == first_word(b) or re.sub(r"[^a-z0-9]", "", fold(a))[:5] == re.sub(r"[^a-z0-9]", "", fold(b))[:5]
 
 
 # ---------------------------------------------------------------- makeup: well-known dupe pairs
@@ -119,8 +139,8 @@ def active_pairs(items):
 # compares. A pair appears only when both products are in our data; add a line when shops start carrying a new dupe.
 # (original must match, original must not match, dupe must match, dupe must not match, dupe's name)
 KNOWN = [
-    (r"better than sex", r"mini|eyeliner|liner|\bset\b|kit", r"lash princess", r"mini|\bset\b", 'Essence Lash Princess'),
-    (r"better than sex", r"mini|eyeliner|liner|\bset\b|kit", r"lash paradise", r"mini|\bset\b|primer", "L'Oréal Lash Paradise"),
+    (r"better than sex", r"mini|eyeliner|liner|primer|\bset\b|kit", r"lash princess", r"mini|\bset\b|primer", 'Essence Lash Princess'),
+    (r"better than sex", r"mini|eyeliner|liner|primer|\bset\b|kit", r"lash paradise", r"mini|\bset\b|primer", "L'Oréal Lash Paradise"),
     (r"dior.*lip glow oil", r"mini|\bset\b", r"fat oil lip drip", r"mini|\bset\b", 'NYX Fat Oil Lip Drip'),
     (r"all nighter.*setting spray", r"mini|vitamin c|\bset\b", r"nyx.*setting spray.*matte|nyx.*matte.*setting spray", r"mini|\bset\b", 'NYX Matte Setting Spray'),
     # wait for shops to carry the dupe: e.l.f. Halo Glow, Camo Concealer, Poreless Putty, Camo Liquid Blush
@@ -155,6 +175,19 @@ def best_offer(item, offers, target_ml=None):
         if sized:
             return min(sized, key=lambda o: (abs(ml(o["size_val"], o["size_unit"]) - target_ml), o["price"]))
     return min(live, key=lambda o: o["price"])
+
+
+MAX_PER_PRODUCT = 3
+CLOSENESS = {"inspired": 0, "known": 1, "active": 2}
+
+
+def size_gap(a, b):
+    """How far apart two sizes ("100 ml", "30 ml") are, as a ratio; unknown sizes last."""
+    try:
+        x, y = float(a.split()[0]), float(b.split()[0])
+        return max(x, y) / min(x, y)
+    except (AttributeError, ValueError, ZeroDivisionError, IndexError):
+        return 99
 
 
 def build(con):
@@ -198,6 +231,13 @@ def build(con):
                      f"{o['size_val']:g} {o['size_unit'] or 'ml'}" if o["size_val"] else None,
                      f"{d['size_val']:g} {d['size_unit'] or 'ml'}" if d["size_val"] else None,
                      round(saving * 100), d["id"]))
+    # secondary to the price comparison, so few: per product only the closest ones. Closest = the strongest evidence
+    # (the shop names the original, then a widely compared makeup pair, then the same active), then the nearest size
+    per_orig = collections.defaultdict(list)
+    for r in rows:
+        per_orig[r[0]].append(r)
+    rows = [r for rs in per_orig.values()
+            for r in sorted(rs, key=lambda r: (CLOSENESS[r[2]], size_gap(r[6], r[7]), -r[8]))[:MAX_PER_PRODUCT]]
     con.executescript("""
         DROP TABLE IF EXISTS dupes;
         CREATE TABLE dupes (item_id TEXT, dupe_id TEXT, kind TEXT, reason TEXT, orig_price REAL, dupe_price REAL,

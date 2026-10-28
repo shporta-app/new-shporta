@@ -46,7 +46,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "gotech.al",
@@ -71,7 +71,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "3vfejzo.al",
@@ -172,7 +172,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "stuhia.al",
@@ -184,7 +184,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "digialbania.com",
@@ -196,7 +196,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "akgalbania.com",
@@ -208,7 +208,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "smartline.al",
@@ -220,7 +220,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "voglitechal.com",
@@ -232,7 +232,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "deny-tech.com",
@@ -244,7 +244,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "phoneminita.com",
@@ -317,7 +317,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "jysk.al",
@@ -341,7 +341,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "velleahome.al",
@@ -365,7 +365,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "elegancehome.al",
@@ -377,7 +377,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "shtepiaideale.al",
@@ -389,7 +389,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "teorenshop.al",
@@ -401,7 +401,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "vking.al",
@@ -413,7 +413,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "dsi.al",
@@ -425,7 +425,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "euro1.al",
@@ -437,7 +437,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "shop.sinani.al",
@@ -449,7 +449,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "mobilerinovita.com",
@@ -461,7 +461,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "3dflex.al",
@@ -510,7 +510,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "zarahome.com",
@@ -558,7 +558,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "dyqanilodrave.al",
@@ -608,7 +608,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "roaakids.com",
@@ -620,7 +620,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "nlnstore.com",
@@ -632,7 +632,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried; robots.txt disallows all"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "dreglo.com",
@@ -644,7 +644,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "duoaunts.com",
@@ -656,7 +656,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "chicco.al",
@@ -705,7 +705,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "onufri.com",
@@ -755,7 +755,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "toena.al",
@@ -804,7 +804,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "arteropetcare.al",
@@ -816,7 +816,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "happypetsplay.com",
@@ -828,7 +828,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "bearshop19.com",
@@ -840,7 +840,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "itegroup.al",
@@ -890,7 +890,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "ascaautoparts.com",
@@ -902,7 +902,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "autopartsrs.com",
@@ -914,7 +914,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "gomarrashketa.com",
@@ -926,7 +926,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "vitamer.al",
@@ -963,7 +963,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "farmaciblloku.com",
@@ -975,7 +975,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "dpm.al",
@@ -987,7 +987,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "herbalpower.al",
@@ -999,7 +999,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "farmaci-irmaprifti.al",
@@ -1011,7 +1011,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "denifarmaci.com",
@@ -1023,7 +1023,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "doctorsaranda.com",
@@ -1035,7 +1035,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "obensupplement.com",
@@ -1047,7 +1047,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "xlabsupps.com",
@@ -1071,7 +1071,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "shop.spar.al",
@@ -1119,7 +1119,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "vier.al",
@@ -1143,7 +1143,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "freshzoneal.net",
@@ -1155,7 +1155,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "cobowine.com",
@@ -1167,7 +1167,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "albagame.al",
@@ -1179,7 +1179,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "gameon.al",
@@ -1215,7 +1215,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "officeandmore.shop",
@@ -1239,7 +1239,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "amisbeauty.al",
@@ -1251,7 +1251,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "dhbeautybrands.al",
@@ -1263,7 +1263,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "glamshop.al",
@@ -1275,7 +1275,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "revlon.com.al",
@@ -1287,7 +1287,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "tophaircosmetics.al",
@@ -1299,7 +1299,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "cabeautyalbania.com",
@@ -1311,7 +1311,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "duppealbania.com",
@@ -1323,7 +1323,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "glowhubshqiperi.com",
@@ -1335,7 +1335,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "aoos.com.al",
@@ -1347,7 +1347,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried; robots.txt disallows all"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "organic.com.al",
@@ -1383,7 +1383,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "parisparfumerie.com",
@@ -1395,7 +1395,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "zaga.al",
@@ -1407,7 +1407,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "mia-gold.com",
@@ -1419,7 +1419,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "individu.al",
@@ -1431,7 +1431,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "shkreliwatches.com",
@@ -1443,7 +1443,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "optikakooa.com",
@@ -1455,7 +1455,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "savage.al",
@@ -1467,7 +1467,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "fitwearal.com",
@@ -1479,7 +1479,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "sneakerfreak-al.com",
@@ -1491,7 +1491,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "ninanana.al",
@@ -1503,7 +1503,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "duet.al",
@@ -1515,7 +1515,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "tutualbania.com",
@@ -1527,7 +1527,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "benian.al",
@@ -1539,7 +1539,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "123.al",
@@ -1551,7 +1551,7 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  },
  {
   "domain": "kujdeson.com",
@@ -1563,6 +1563,6 @@
   "crawl_delay": null,
   "products_estimate": null,
   "verdict": "excluded",
-  "reason": "homepage answered 429 (rate-limit/WAF) - not retried"
+  "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
  }
 ]
