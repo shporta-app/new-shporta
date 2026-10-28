@@ -1564,5 +1564,77 @@
   "products_estimate": null,
   "verdict": "excluded",
   "reason": "429 again on a slow single-request re-probe from the PC (2026-10-27); recheck once after 2026-11-03, slowly"
+ },
+ {
+  "api_ok": true,
+  "currency_hint": null,
+  "crawl_delay": null,
+  "platform": "woocommerce",
+  "verdict": "ok",
+  "domain": "harabeli.al",
+  "category": "perfume",
+  "api_total": 74,
+  "products_estimate": 74,
+  "reason": "woocommerce API answers; robots allows; no ToS page found to check (2026-10-29); overlap test: 36 of 74 already sold by our shops"
+ },
+ {
+  "api_ok": true,
+  "currency_hint": "ALL",
+  "crawl_delay": null,
+  "platform": "woocommerce",
+  "verdict": "ok",
+  "domain": "gnc.al",
+  "category": "beauty",
+  "api_total": 263,
+  "products_estimate": 263,
+  "reason": "woocommerce API answers; robots allows; no ToS page found to check (2026-10-29); supplements; overlap test: 6 of 100"
+ },
+ {
+  "api_ok": true,
+  "currency_hint": null,
+  "crawl_delay": null,
+  "platform": "woocommerce",
+  "verdict": "ok",
+  "domain": "kapeoferten.com",
+  "category": "multi",
+  "api_total": 82,
+  "products_estimate": 82,
+  "reason": "woocommerce API answers; robots allows; no ToS page found to check (2026-10-29); overlap test: 6 of 82"
+ },
+ {
+  "api_ok": true,
+  "currency_hint": null,
+  "crawl_delay": null,
+  "platform": "woocommerce",
+  "verdict": "excluded",
+  "domain": "ibuy.al",
+  "category": "tech",
+  "api_total": 3471,
+  "products_estimate": 3471,
+  "reason": "ToS forbids reproducing/copying the site's content without written permission (checked 2026-10-29); only with the shop's permission"
+ },
+ {
+  "api_ok": true,
+  "currency_hint": null,
+  "crawl_delay": null,
+  "platform": "woocommerce",
+  "verdict": "excluded",
+  "domain": "bigmarketcitypark.com",
+  "category": "multi",
+  "api_total": 1645,
+  "products_estimate": 1645,
+  "reason": "ToS forbids reproducing/copying the site's content without written permission (checked 2026-10-29); only with the shop's permission"
+ },
+ {
+  "api_ok": true,
+  "currency_hint": null,
+  "crawl_delay": null,
+  "platform": "woocommerce",
+  "verdict": "excluded",
+  "domain": "shtepiaeofertave.al",
+  "category": "multi",
+  "api_total": 1878,
+  "products_estimate": 1878,
+  "reason": "ToS forbids reproducing/copying the site's content without written permission (checked 2026-10-29); only with the shop's permission"
  }
 ]
