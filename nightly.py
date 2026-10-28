@@ -77,7 +77,7 @@ def indexnow():
     try:
         con = sqlite3.connect(f"file:{HERE / 'seed' / 'phia-api.db'}?mode=ro", uri=True)
         ids = [r[0] for r in con.execute("SELECT id FROM items WHERE shops >= 2 ORDER BY shops DESC, save_pct DESC LIMIT 9900")]
-        cats = [r[0] for r in con.execute("SELECT DISTINCT cat FROM items")]
+        cats = [r[0] for r in con.execute("SELECT DISTINCT cat FROM items WHERE shops >= 2")]
         con.close()
         urls = [seo.BASE + p for p in ("/", "/raport", "/kategorite", "/dupe", "/dyqanet", "/rreth")] +                [f"{seo.BASE}/kategori/{c}" for c in cats] + [f"{seo.BASE}/produkt/{i}" for i in ids]
         body = json.dumps({"host": "shporta.app", "key": seo.INDEXNOW_KEY,
@@ -108,6 +108,8 @@ def server_nightly():
     log("server nightly start")
     merge_inbox()  # yesterday's PC-only shops first, so they're in this build too
     run(sys.executable, "refresh.py", "--skip", *PC_ONLY, check=False)
+    # shops a vetting pass approved since the last run (shops_new_vetted.json, verdict "ok"): their first collection
+    run(sys.executable, "add_shops.py", check=False)
     merge_inbox()
     run(sys.executable, "match.py")
     run(sys.executable, "build_seed.py")
