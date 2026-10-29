@@ -120,6 +120,11 @@ def server_nightly():
         alerts.check(HERE / "seed" / "phia-api.db", log)
     except Exception as e:
         log(f"alerts failed: {e}")
+    try:  # price-drop notifications on phones and computers
+        import push
+        push.check(HERE / "seed" / "phia-api.db", log)
+    except Exception as e:
+        log(f"push failed: {e}")
     backup()
     indexnow()
     log("server nightly done")

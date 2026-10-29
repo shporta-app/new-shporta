@@ -531,3 +531,26 @@ dialog#report::backdrop { background: rgba(20, 18, 31, .45); }
   table.offers td:last-child { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
   table.offers .t { overflow-wrap: anywhere; }
 }
+
+/* notifications: the bell in the header (also on phones) and its page */
+.bell { position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; color: var(--ink); flex: none; }
+.bell:hover, .bell[aria-current] { background: var(--soft); color: var(--violet); }
+.bell b { position: absolute; top: 3px; right: 2px; min-width: 18px; font: 700 11px/18px var(--display); text-align: center; background: var(--lime);
+  color: #14121F; border-radius: 999px; padding: 0 4px; box-shadow: 0 0 0 2px var(--paper); }
+.bell b:empty { display: none; }
+@media (max-width: 760px) { .bell { margin-left: auto; } }
+.push-card { border: 1px solid var(--line); border-radius: 18px; padding: 20px 22px; display: grid; gap: 10px; margin: 8px 0 28px; }
+.push-card h2 { margin: 0; font-size: 22px; }
+.push-card p { margin: 0; color: var(--muted); }
+.push-card .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.push-card .state { font-weight: 600; color: var(--ink); }
+.push-card .state.on::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #2E9E5B; margin-right: 8px; }
+.notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.notes li a { display: grid; grid-template-columns: 64px 1fr; gap: 14px; align-items: center; padding: 12px; border: 1px solid var(--line);
+  border-radius: 14px; color: var(--ink); text-decoration: none; }
+.notes li a:hover { border-color: var(--violet); }
+.notes li.unread a { background: var(--violet-tint); border-color: transparent; }
+.notes img, .notes .noimg { width: 64px; height: 64px; object-fit: contain; border-radius: 10px; background: #fff; }
+.notes .t { font-weight: 600; display: block; }
+.notes small { color: var(--muted); }
+.push-hint { margin-top: 10px; font-size: 15px; }

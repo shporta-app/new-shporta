@@ -53,7 +53,7 @@ async function api(path) {
 // list is opened), with the cheapest price on the day they saved it, so the list can say what changed since.
 const WATCH_KEY = "shporta-lista";
 const watchList = () => { try { return JSON.parse(localStorage.getItem(WATCH_KEY)) || []; } catch { return []; } };
-const watchSave = (l) => { try { localStorage.setItem(WATCH_KEY, JSON.stringify(l.slice(0, 100))); } catch {} watchBadge(); };
+const watchSave = (l) => { try { localStorage.setItem(WATCH_KEY, JSON.stringify(l.slice(0, 100))); } catch {} watchBadge(); pushSync(); };
 const watching = (id) => watchList().some((w) => w.id === id);
 function watchToggle(it) {
   const l = watchList();
@@ -79,6 +79,130 @@ function watchBadge() {
   const n = watchList().length;
   a.hidden = !n && !savings().length;
   a.querySelector("span").textContent = n ? ` (${n})` : "";
+}
+
+/* ---------- Notifications ---------- */
+// In the app: the bell lists price drops on products the visitor follows, worked out here and kept only in this browser.
+// Outside it: with the visitor's permission the browser gives us a push address, and each night after the price update
+// the server (push.py) sends a notification when a followed product gets cheaper, even with shporta closed.
+const NOTES_KEY = "shporta-njoftime";
+const notes = () => { try { return JSON.parse(localStorage.getItem(NOTES_KEY)) || []; } catch { return []; } };
+const notesSave = (l) => { try { localStorage.setItem(NOTES_KEY, JSON.stringify(l.slice(0, 50))); } catch {} bellBadge(); };
+function bellBadge() {
+  const a = document.getElementById("nav-bell");
+  if (!a) return;
+  const n = notes().filter((x) => !x.read).length;
+  a.querySelector("b").textContent = n ? (n > 9 ? "9+" : String(n)) : "";
+  a.setAttribute("aria-label", n ? `Njoftimet, ${n} të reja` : "Njoftimet");
+}
+// a followed product cheaper than the last time we told the visitor (or than the day they followed it)
+async function noteDrops() {
+  const l = await watchFetch();
+  const list = watchList(), add = [], today = new Date().toISOString().slice(0, 10);
+  for (const w of l) {
+    const mine = list.find((x) => x.id === w.id);
+    if (!dropped(w) || !mine || w.now.min_price >= (mine.told ?? w.price)) continue;
+    add.push({ id: w.id, title: w.title, image: w.image, size: w.size, cur: w.currency, was: mine.told ?? w.price,
+               now: w.now.min_price, date: today });
+    mine.told = w.now.min_price;
+  }
+  if (!add.length) return;
+  try { localStorage.setItem(WATCH_KEY, JSON.stringify(list)); } catch {}
+  notesSave([...add, ...notes()]);
+}
+
+function pushReady() { return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+function onIPhone() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); }
+function asApp() { return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; }
+const keyBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+const pushItems = () => watchList().map((w) => ({ id: w.id, price: w.price }));
+async function pushSub() {
+  if (!pushReady()) return null;
+  return (await navigator.serviceWorker.ready).pushManager.getSubscription();
+}
+async function pushPost(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Diçka shkoi keq. Provo përsëri.");
+  return d;
+}
+async function pushOn() {
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error(perm === "denied"
+    ? "Njoftimet janë bllokuar për shporta.app. Lejoji te cilësimet e shfletuesit (ikona pranë adresës), pastaj provo përsëri."
+    : "Nuk dhe leje për njoftime.");
+  const { key } = await api("/api/push/key");
+  const reg = await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription())
+    || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }));
+  return pushPost("/api/push/subscribe", { subscription: sub.toJSON(), items: pushItems() });
+}
+async function pushOff() {
+  const sub = await pushSub();
+  if (!sub) return;
+  await pushPost("/api/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+  await sub.unsubscribe();
+}
+// the list changed: the server gets the new list for this device (only when notifications are on)
+let pushTimer;
+function pushSync() {
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    const sub = await pushSub().catch(() => null);
+    if (sub && Notification.permission === "granted")
+      pushPost("/api/push/subscribe", { subscription: sub.toJSON(), items: pushItems() }).catch(() => {});
+  }, 800);
+}
+
+function pushCard(el) {
+  if (!el) return;
+  const draw = async (msg = "", err = false) => {
+    if (!pushReady()) {
+      el.innerHTML = `<h2>njoftime në telefon</h2><p>${onIPhone() && !asApp()
+        ? "Në iPhone njoftimet punojnë kur shporta është në ekranin kryesor: në Safari shtyp Ndaj (katrori me shigjetë lart), pastaj “Add to Home Screen”. Hape shportën nga ikona dhe aktivizo njoftimet këtu."
+        : "Ky shfletues nuk i mbështet njoftimet. Provo Chrome, Edge, Firefox ose Safari."}</p>`;
+      return;
+    }
+    const sub = await pushSub().catch(() => null);
+    const on = Boolean(sub) && Notification.permission === "granted";
+    const state = on ? "Aktive në këtë pajisje" : Notification.permission === "denied" ? "Të bllokuara në këtë shfletues" : "Joaktive";
+    el.innerHTML = `<h2>njoftime në telefon dhe kompjuter</h2>
+      <p>Një njoftim kur bie çmimi i një produkti që ndjek, edhe kur shporta është e mbyllur. Kontrollojmë një herë në ditë, pas përditësimit të çmimeve. Pa llogari dhe pa email.</p>
+      <div class="row"><span class="state${on ? " on" : ""}">${state}</span>
+        <button type="button" class="btn${on ? " btn-ghost" : ""}" id="push-toggle">${on ? "Çaktivizo njoftimet" : "Aktivizo njoftimet"}</button></div>
+      ${msg ? `<p class="${err ? "err" : "ok"}" role="status">${esc(msg)}</p>` : ""}`;
+    el.querySelector("#push-toggle").onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        if (on) { await pushOff(); draw("Njoftimet u çaktivizuan në këtë pajisje."); }
+        else {
+          const d = await pushOn();
+          draw(watchList().length ? d.message : "Njoftimet janë aktive. Ndiq një produkt (“Ndiq çmimin”) dhe të njoftojmë kur i bie çmimi.");
+        }
+      } catch (x) { draw(x.message, true); }
+    };
+  };
+  draw();
+}
+
+async function pageNotes() {
+  document.title = "Njoftimet | shporta";
+  await noteDrops().catch(() => {});
+  const l = notes();
+  const row = (n) => `<li class="${n.read ? "" : "unread"}"><a href="/produkt/${esc(n.id)}" data-link>${img(n.image, n.title)}
+      <span><span class="t">Ra çmimi: ${esc(n.title)}${n.size ? ` <small>${esc(n.size)}</small>` : ""}</span>
+        Tani <b class="num">${lek(n.now, n.cur)}</b>, ishte ${lek(n.was, n.cur)}.<br><small>${esc(day(n.date))}</small></span></a></li>`;
+  main.innerHTML = `<div class="wrap">
+    <div class="page-head"><h1>njoftimet</h1>
+      <p>Kur bie çmimi i një produkti që ndjek, e sheh këtu. Njoftimet ruhen vetëm në këtë shfletues.</p></div>
+    <section class="push-card" id="push-card" aria-live="polite"></section>
+    ${l.length ? `<ul class="notes">${l.map(row).join("")}</ul>`
+      : `<div class="empty"><b>Asnjë njoftim ende.</b>${watchList().length
+        ? "Kur bie çmimi i një produkti që ndjek, e sheh këtu."
+        : "Hap një produkt dhe shtyp “Ndiq çmimin”. Kur i bie çmimi, të njoftojmë."}</div>`}
+  </div>`;
+  pushCard(document.getElementById("push-card"));
+  if (l.some((n) => !n.read)) notesSave(l.map((n) => ({ ...n, read: true })));
 }
 
 // "Kursimet e mia": when a visitor goes from shporta to a shop, this browser notes how much less that shop asks than
@@ -449,7 +573,7 @@ async function pageItem(id) {
   const btn = document.getElementById("watch");
   const label = () => { btn.textContent = watching(it.id) ? "E ndjek ✓ (hiqe)" : "Ndiq çmimin"; btn.setAttribute("aria-pressed", watching(it.id)); };
   label();
-  btn.onclick = () => { watchToggle(it); watchNow = null; label(); };
+  btn.onclick = () => { const on = watchToggle(it); watchNow = null; label(); if (on) offerPush(btn); };
   if (location.hash === "#ndiq" && !watching(it.id)) {  // "Ndiq çmimin" from the browser extension
     watchToggle(it); watchNow = null; label();
     history.replaceState(null, "", location.pathname);
@@ -468,6 +592,20 @@ async function pageItem(id) {
       if (r.ok && !watching(it.id)) { watchToggle(it); label(); }
     } catch { msg.textContent = "Nuk u lidhëm dot. Provo përsëri."; msg.className = "err"; }
     b.disabled = false;
+  };
+}
+
+// right after "Ndiq çmimin": once, ask whether to send a notification when the price drops (the browser asks only on a tap)
+async function offerPush(btn) {
+  if (!pushReady() || Notification.permission !== "default" || document.getElementById("push-offer")) return;
+  if (await pushSub().catch(() => null)) return;
+  btn.closest("p").insertAdjacentHTML("afterend", `<p class="push-hint" id="push-offer">Të njoftojmë në telefon kur bie çmimi?
+    <button type="button" class="btn btn-ghost" id="push-offer-on">Aktivizo njoftimet</button></p>`);
+  document.getElementById("push-offer-on").onclick = async (e) => {
+    e.target.disabled = true;
+    const box = document.getElementById("push-offer");
+    try { await pushOn(); box.textContent = "Njoftimet janë aktive. Do të të njoftojmë kur bie çmimi."; }
+    catch (x) { box.textContent = x.message; }
   };
 }
 
@@ -744,6 +882,11 @@ function pagePrivacy() {
     <p>Nëse kërkon njoftim kur bie çmimi, ruajmë vetëm emailin, produktin dhe çmimin. Të shkruajmë vetëm pasi ta konfirmosh me linkun që të dërgojmë,
       dhe vetëm kur çmimi bie. Emailet i dërgon për ne shërbimi Resend. Adresën nuk e ndajmë dhe nuk e shesim me askënd; një kërkesë e pakonfirmuar
       fshihet pas 7 ditësh, dhe çdo email ka një link që i ndalon njoftimet dhe e fshin adresën.</p>
+    <h2>Njoftimet në telefon dhe kompjuter</h2>
+    <p>Nëse aktivizon njoftimet, shfletuesi yt na jep një adresë njoftimesh (një adresë e rastësishme te Google, Mozilla, Apple ose Microsoft,
+      pa emër dhe pa email). Ruajmë vetëm atë adresë, produktet që ndjek dhe çmimin e tyre, që të të njoftojmë një herë në ditë kur bie çmimi.
+      Mesazhi është i enkriptuar: vetëm shfletuesi yt e lexon. Kur i çaktivizon te "Njoftimet", adresa dhe lista fshihen te ne.
+      Njoftimet e shfaqura brenda shportës ruhen vetëm në këtë shfletues.</p>
     <h2>Kur kalon te një dyqan</h2>
     <p>Lidhjet "Hape në dyqan" kalojnë nga <code>shporta.app/go/…</code>. Ruajmë cilin produkt dhe cilin dyqan zgjodhe dhe kur. Lidhjes i shtojmë
       <code>utm_source=shporta</code>, që dyqani ta dijë se vizita erdhi nga shporta. Kjo mund të na lejojë në të ardhmen të marrim një komision nga dyqani
@@ -1224,6 +1367,7 @@ async function route() {
     else if (pathname === "/dupe") await pageDupes(params);
     else if (pathname === "/ndaj") await pageShare(params);
     else if (pathname === "/lista") await pageList();
+    else if (pathname === "/njoftime") await pageNotes();
     else if (pathname === "/raport") await pageReport();
     else if (pathname === "/shporta") await pageBasket();
     else if (pathname === "/skano") await pageScan();
@@ -1259,8 +1403,16 @@ window.addEventListener("popstate", route);
 route();
 watchBadge();
 basketBadge();
+bellBadge();
+if (watchList().length && location.pathname !== "/njoftime") noteDrops().catch(() => {});
 consentBanner();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type === "open") go(new URL(e.data.url, location.origin).pathname);
+    if (e.data?.type === "push") { watchNow = null; noteDrops().catch(() => {}); }  // a notification just came in
+  });
+}
 
 /* ---------- Install on the phone ---------- */
 // Chrome, Edge and Samsung Internet hand us an install prompt; iPhone Safari has none, so there we explain the two taps.

@@ -321,6 +321,8 @@ STATIC = {  # pages app.js draws itself; the server gives them a title, descript
                  "Shporta ime", "noindex,follow"),
     "/lista": ("Produktet që ndjek | shporta", "Produktet që ruajte në këtë shfletues dhe sa ka ndryshuar çmimi që kur i ruajte.",
                "Produktet që ndjek", "noindex,follow"),
+    "/njoftime": ("Njoftimet | shporta", "Njoftime kur bie çmimi i produkteve që ndjek, në shportë dhe në telefon.",
+                  "Njoftimet", "noindex,follow"),
     "/kerko": ("Kërko | shporta", "Kërko një produkt ose markë në dyqanet online shqiptare.", "Kërko", "noindex,follow"),
 }
 

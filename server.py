@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import alerts
 import dupes
 import feedback
+import push
 import seo
 import stats
 from match import GENERIC, MEN_WORDS, PERFUME_WORDS, SECOND_HAND, WOMEN_WORDS, gender_of, parse, same_size, size_by_price, size_label
@@ -1102,6 +1103,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, dupe_list(q), cache="public, max-age=600")
             if path == "/api/shops":
                 return self._send(200, shops(), cache="public, max-age=3600")
+            if path == "/api/push/key":  # notifications on the phone/computer (push.py)
+                return self._send(200, {"key": push.key()}, cache="public, max-age=86400")
             if path.startswith("/go/"):
                 cookies = dict(c.strip().split("=", 1) for c in (self.headers.get("Cookie") or "").split(";") if "=" in c)
                 visitor = cookies.get("sp_id") if cookies.get("sp_consent") == "all" else None
@@ -1176,7 +1179,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/njoftim/ndalo":  # Gmail's own "unsubscribe" button (List-Unsubscribe-Post): stop every alert
             alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])
             return self._send(200, {"ok": True})
-        if path not in ("/api/lookup", "/api/alert", "/api/feedback"):
+        if path not in ("/api/lookup", "/api/alert", "/api/feedback", "/api/push/subscribe", "/api/push/unsubscribe"):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -1192,6 +1195,13 @@ class Handler(BaseHTTPRequestHandler):
                 code, msg = feedback.record(str(data.get("kind", ""))[:20], str(data.get("item", ""))[:20], offer,
                                             str(data.get("note", ""))[:300], ip, self.headers.get("User-Agent", ""))
                 return self._send(code, {"message": msg} if code == 200 else {"error": msg})
+            if path == "/api/push/subscribe":  # notifications on: this device's push address + the products it follows
+                ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+                code, msg = push.subscribe(data.get("subscription"), data.get("items"), ip, alert_item)
+                return self._send(code, {"message": msg} if code == 200 else {"error": msg})
+            if path == "/api/push/unsubscribe":
+                code, msg = push.unsubscribe(str(data.get("endpoint", ""))[:1000])
+                return self._send(code, {"message": msg})
             if path == "/api/alert":  # "email me when it gets cheaper" on a product page (alerts.py)
                 ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
                 code, msg = alerts.subscribe(str(data.get("email", ""))[:254], str(data.get("item", ""))[:20], ip, alert_item)
