@@ -1,0 +1,50 @@
+# Found 2026-10-29 by a web search for Albanian shops selling the same branded products. Not in shops.txt / shops_new*.txt / shops_429.txt / shops_new_vetted.json.
+# Format: domain | category | brands seen (+ notes). Each homepage was fetched once. "unverified" = the homepage could not be fetched, so the brands come from search results only.
+# --- strong: prices in lek, international brands seen on the homepage ---
+farma24.al | beauty | Mustela, Frezyderm, Avene, SVR, Uriage, Nuxe (Shopify, Lek)
+pinklab.al | beauty | Vichy, Lierac, Uriage, La Roche-Posay, Avene, Frezyderm, The Ordinary, Pharmaceris, Solgar, Chicco (WooCommerce, L)
+farmacivora.al | beauty | La Roche-Posay, Uriage, Sesderma, Pharmaceris, Nuxe, Neutrogena, Mustela, The Ordinary (WooCommerce, L)
+skinsharedoctor.com | beauty | CeraVe, Bioderma, Pharmaceris, Sesderma, Heliocare (Shopify, ALL)
+farmavitta.al | beauty | Uriage, La Roche-Posay, CeraVe (ALL)
+farmagen.al | beauty | Nuxe, Lierac, Vichy, La Roche-Posay, Bioderma, Uriage, SVR, Sesderma, Solgar (Lekë, custom site)
+ansifarma.al | beauty | La Roche-Posay, Lierac, Frezyderm, NYX, Chicco, Pampers (WooCommerce, L)
+amar.al | beauty | Pharmaceris, Dr Irena Eris (Shopify, Lek)
+celular.al | electronics | iPhone, Samsung Galaxy, Xiaomi, Dyson, Huawei (Astro site; krahaso.net already tracks it)
+qto.al | electronics | Xiaomi, PlayStation, Apple, JBL, LEGO (WooCommerce, L)
+boostmobile.al | electronics | Samsung Galaxy, iPhone, Xiaomi, JBL, Lenovo (WooCommerce, ALL)
+ismart.al | electronics | iPhone, Samsung Galaxy (WooCommerce, L; mobile shop + repair)
+koprraci.al | electronics | Samsung Galaxy S24 FE/S25/S25 Ultra, laptops (WooCommerce, L; product names end in "| 3VFejzo", so it may be linked to known 3vfejzo.al)
+theparfumcollection.al | perfume | Armani, Versace, Paco Rabanne, Gucci, Dior, Chanel, Calvin Klein, Givenchy (Tirana, "originals from London")
+lattafa.al | perfume | Lattafa, Afnan, Rasasi (Shopify, ALL; calls itself "Aroma Dubai (Ish Lattafa Albania)", so it is the SAME BUSINESS as known aromadubai.al)
+farmahappy.com | beauty | online parapharmacy, dermocosmetics + supplements, Lek (brands not visible on homepage; also ships to Kosovo/North Macedonia)
+# --- worth a check: fetch failed, or brands/currency not confirmed ---
+phoneshopalbania.al | electronics | iPhone 17, Samsung S25 Ultra, Xiaomi, Blackview in Lekë (search only; homepage answered 403)
+fredicomputers.al | electronics | HP, Dell, Lenovo, Apple (.al domain but homepage prices are in EUR)
+al.gorenje.com | appliances | Gorenje official store, fridges/ovens in Lekë (single brand, same models as retailers; homepage answered 403)
+shopstop.al | multi | JBL headphones (search only; homepage did not answer)
+skindressed.com | beauty | Bioderma Sensibio (search only; homepage did not answer)
+lkure.com | beauty | The Ordinary brand page (search only; JS-only homepage, nothing readable)
+hbd.al | beauty | Eucerin collection (search showed 0.00 ALL prices; homepage answered 402, may be dead)
+foxybeautyshop.com | beauty | Shopify, currency ALL, brands not visible on homepage
+blackpantherparfumes.al | perfume | says it sells original Dubai/French perfumes, Tirana + Vlore (no brands or prices on homepage)
+parfumeriaromajote.com | perfume | "Aroma Jote" online perfume shop (no brands visible on homepage)
+plusito.al | pets | Royal Canin (search only; stores in Tirana/Durres; homepage did not answer)
+stacionilibrarise.al | books | online bookshop, delivery across Albania (JS homepage; titles not seen)
+shtepiaelibritshqip.com | books | Albanian publishers' cooperative shop (search only; homepage did not answer)
+shumica.al | kids | B2B wholesale toys/goods in L (wholesale, low priority)
+# --- Kosovo / EUR shops that also sell to Albania (not lek; same brands) ---
+# kejesonline.com | electronics | Apple MacBook/iPad/AirPods, EUR
+# mobifita.com | electronics | Samsung Galaxy, iPhone, Xiaomi, EUR
+# startech24.com | electronics | gaming PCs/laptops, EUR
+# edc-fragrances.com | perfume | Armani, Dior, Lancome, Carolina Herrera, Prada, Azzaro, EUR
+# skosmetics.com | beauty | EUR
+# dcbeauty.store | beauty | L'Oreal Professionnel, EUR
+# anapharmacy.com | beauty | CeraVe, Eucerin, La Roche-Posay, EUR
+# novapharm.org | beauty | Avene, La Roche-Posay, Eucerin, EUR
+# pharma-tree.com | beauty | Kosovo, EUR
+# librariaroxha.com | books | Kosovo, EUR
+# kfarma-ks.com | beauty | EUR, Kosovo branch of known kfarma.al
+# ere-shop.com | perfume | YSL etc., EUR (did not answer)
+# --- rejected ---
+# shqiponjaparfum.com (own-brand perfume sets), theskinorganics.com (own-brand mists), modastika.com (domain for sale),
+# shitdhebli.com + blejonline.net (classifieds/marketplace), sonilia.com (TV-offer gadgets), nicoleparfume.com + essenzestudio (inspired/dupes)
