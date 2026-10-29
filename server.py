@@ -146,7 +146,7 @@ def page_num(q):
 
 # what the site lists: the same product sold by 2+ shops. shporta compares, it is not a catalogue of one shop's
 # products (the only single-shop items in the data are dupes, shown only in the dupes section)
-LISTED = "shops >= 2"
+LISTED = "shops >= 2 AND cat NOT IN ('ushqime')"  # no groceries (categories.NOT_LISTED)
 
 
 def listed_ids(ids):
@@ -164,11 +164,11 @@ def home():
     stats = {
         "offers": db().execute("SELECT COUNT(*) FROM products").fetchone()[0],
         "shops": db().execute("SELECT COUNT(*) FROM shops").fetchone()[0],
-        "compared": db().execute("SELECT COUNT(*) FROM items WHERE shops >= 2").fetchone()[0],
+        "compared": db().execute(f"SELECT COUNT(*) FROM items WHERE {LISTED}").fetchone()[0],
         "updated": meta("updated"),
     }
     # deals: the same product, in stock in 3+ shops, with a real gap (very large gaps are usually a mismatch)
-    pool = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE in_stock_shops >= 3 AND currency = 'ALL' AND cat != 'tjeter'
+    pool = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE in_stock_shops >= 3 AND currency = 'ALL' AND cat NOT IN ('tjeter', 'ushqime')
                          AND save_pct BETWEEN 15 AND 65 AND image IS NOT NULL
                          ORDER BY save_pct * min(in_stock_shops, 6) DESC LIMIT 400""", ())
     # at most two per brand (first word of the name) and four per category, so the list isn't one brand
@@ -181,7 +181,7 @@ def home():
             deals.append(d)
         if len(deals) == 24:
             break
-    featured = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE in_stock_shops >= 5 AND currency = 'ALL' AND cat != 'tjeter'
+    featured = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE in_stock_shops >= 5 AND currency = 'ALL' AND cat NOT IN ('tjeter', 'ushqime')
                              AND save_pct BETWEEN 20 AND 60 AND image IS NOT NULL
                              ORDER BY in_stock_shops DESC, save_pct DESC LIMIT 12""", ())
     for f in featured:
@@ -206,7 +206,7 @@ def cached_home():
 def impact():
     """How much more the dearest shop asks than the cheapest, for the same product in stock in 3+ shops."""
     rows = db().execute("""SELECT min_price, max_price FROM items WHERE in_stock_shops >= 3 AND currency = 'ALL'
-                           AND cat != 'tjeter' AND save_pct BETWEEN 3 AND 70""").fetchall()
+                           AND cat NOT IN ('tjeter', 'ushqime') AND save_pct BETWEEN 3 AND 70""").fetchall()
     if not rows:
         return None
     more = sorted((hi / lo - 1) * 100 for lo, hi in rows if lo > 0)
@@ -220,7 +220,7 @@ def report():
     in 3+ shops, priced in lek; one price per shop (its cheapest listing of that size), so every number is a like-for-like gap."""
     rows = db().execute("""SELECT p.item_id, p.shop, MIN(p.price), i.cat FROM items i CROSS JOIN products p ON p.item_id = i.id
                            WHERE p.in_compare = 1 AND p.in_stock = 1 AND p.currency = 'ALL' AND p.price > 0
-                             AND i.in_stock_shops >= 3 AND i.currency = 'ALL' AND i.cat != 'tjeter' AND i.id LIKE 'g%'
+                             AND i.in_stock_shops >= 3 AND i.currency = 'ALL' AND i.cat NOT IN ('tjeter', 'ushqime') AND i.id LIKE 'g%'
                            GROUP BY p.item_id, p.shop""").fetchall()
     by_item = collections.defaultdict(dict)
     cat_of = {}
@@ -351,7 +351,7 @@ SORTS = {"compared": "shops DESC, save_pct DESC", "cheap": "min_price ASC", "dea
 
 
 def category(cat, q):
-    if cat not in CATEGORIES and cat != "tjeter":
+    if cat not in CATEGORIES and cat != "tjeter" or cat == "ushqime":  # no groceries
         return None
     where, args = ["cat = ?", LISTED], [cat]
     if q.get("shop"):
@@ -406,7 +406,7 @@ def dupe_list(q):
 
 def item(item_id):
     r = db().execute(f"SELECT {ITEM_COLS} FROM items WHERE id = ?", (item_id,)).fetchone()
-    if not r:
+    if not r or r["cat"] == "ushqime":  # no groceries
         return None
     it = dict(r)
     it["offers"] = offers_for(item_id)
@@ -711,7 +711,8 @@ def lookup(title, price=None, currency="ALL", url="", gtin=""):
          "size_assumed": False}
 
     def answer(offers, item_id=None):
-        offers = [o for o in one_per_shop(offers) if o["shop"].removeprefix("www.") != page_host]  # never the shop you're on
+        offers = [o for o in one_per_shop(offers) if o["shop"].removeprefix("www.") != page_host  # never the shop you're on
+                  and o["cat"] != "ushqime"]  # no groceries
         item_id = item_id or next((o["item_id"] for o in offers if o["item_id"].startswith("g")), None)
         exact = [public(o) for o in offers[:20]]
         for o in exact:  # a shop that writes only "55" in a 55 g comparison: same number, show it with the unit

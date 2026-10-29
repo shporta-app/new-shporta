@@ -76,8 +76,8 @@ def indexnow():
     import seo
     try:
         con = sqlite3.connect(f"file:{HERE / 'seed' / 'phia-api.db'}?mode=ro", uri=True)
-        ids = [r[0] for r in con.execute("SELECT id FROM items WHERE shops >= 2 ORDER BY shops DESC, save_pct DESC LIMIT 9900")]
-        cats = [r[0] for r in con.execute("SELECT DISTINCT cat FROM items WHERE shops >= 2")]
+        ids = [r[0] for r in con.execute("SELECT id FROM items WHERE shops >= 2 AND cat != 'ushqime' ORDER BY shops DESC, save_pct DESC LIMIT 9900")]
+        cats = [r[0] for r in con.execute("SELECT DISTINCT cat FROM items WHERE shops >= 2 AND cat != 'ushqime'")]
         con.close()
         urls = [seo.BASE + p for p in ("/", "/raport", "/kategorite", "/dupe", "/dyqanet", "/rreth")] +                [f"{seo.BASE}/kategori/{c}" for c in cats] + [f"{seo.BASE}/produkt/{i}" for i in ids]
         body = json.dumps({"host": "shporta.app", "key": seo.INDEXNOW_KEY,

@@ -374,7 +374,7 @@ def robots_txt():
 
 
 def sitemap_index(srv):
-    n = srv.db().execute("SELECT COUNT(*) FROM items WHERE shops >= 2").fetchone()[0]
+    n = srv.db().execute(f"SELECT COUNT(*) FROM items WHERE {srv.LISTED}").fetchone()[0]
     lastmod = (srv.meta("updated") or "")[:10]
     parts = ["faqet"] + [f"produkte-{i + 1}" for i in range((n + SITEMAP_CHUNK - 1) // SITEMAP_CHUNK)]
     body = "".join(f"<sitemap><loc>{BASE}/sitemap-{p}.xml</loc>{f'<lastmod>{lastmod}</lastmod>' if lastmod else ''}</sitemap>" for p in parts)
@@ -387,14 +387,14 @@ def urlset(urls, lastmod):
 
 
 def page_urls(srv):
-    cats = [r[0] for r in srv.db().execute("SELECT cat FROM items WHERE shops >= 2 GROUP BY cat")]
+    cats = [r[0] for r in srv.db().execute(f"SELECT cat FROM items WHERE {srv.LISTED} GROUP BY cat")]
     return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia")] + \
            [f"{BASE}/kategori/{c}" for c in cats] + [f"{BASE}/raport/{m}" for m in srv.report_months()]
 
 
 def product_urls(srv, chunk=None):
     """Compared products, the most-compared first (also what nightly.py sends to IndexNow)."""
-    sql = "SELECT id FROM items WHERE shops >= 2 ORDER BY shops DESC, save_pct DESC, id"
+    sql = f"SELECT id FROM items WHERE {srv.LISTED} ORDER BY shops DESC, save_pct DESC, id"
     if chunk is not None:
         sql += f" LIMIT {SITEMAP_CHUNK} OFFSET {chunk * SITEMAP_CHUNK}"
     return [f"{BASE}/produkt/{r[0]}" for r in srv.db().execute(sql)]

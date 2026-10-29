@@ -133,9 +133,16 @@ SHOP_NAME_FALLBACK = [("ora", re.compile(r"watch|\bora\b|tufina|orlette|enzoatti
                       ("syze", re.compile(r"optik|optic|optica|syze|lente"))]
 
 
+BABY = re.compile(r"\(\d+ ?m\+?\)|\d+ ?m\+|bebe|baby|infant|femij|muajsh|formul|plasmon|humana|aptamil|nutriben|hipp|modilac|nan|nutrilon")
+# shporta compares no groceries (food and drink): the category stays only to keep those products out of the others
+NOT_LISTED = {"ushqime"}
+
+
 def classify(title, category_raw, shop_cat, shop=""):
     for text in (fold(title), fold(category_raw)):
         cat = first_category(text, shop_cat)
+        if cat == "ushqime" and BABY.search(fold(title) + " " + fold(category_raw)):
+            return "femije"  # baby formula and baby food are kids' products, not groceries
         if cat:
             if shop_cat == "perfume" and cat in FASHION_CATS:
                 return "parfume"

@@ -34,7 +34,7 @@ SRC = HERE / "data" / "phia.db"
 OUT = HERE / "seed" / "phia-api.db"
 STALE_DAYS = 3  # an offer not seen for this long (relative to the newest data) is not shown
 
-from categories import CATEGORIES, classify, fold  # noqa: E402  (categories.py explains the rules)
+from categories import CATEGORIES, NOT_LISTED, classify, fold  # noqa: E402  (categories.py explains the rules)
 
 
 def page_key(url):
@@ -236,6 +236,8 @@ def main():
     # not a catalogue: a product only one shop sells has nothing to compare, so it isn't listed. Kept only where a
     # dupe points to it. Its offers stay in `products` (the extension still recognises that shop's page).
     dst.execute("DELETE FROM items WHERE shops < 2 AND id NOT IN (SELECT item_id FROM dupes UNION SELECT dupe_id FROM dupes)")
+    # no groceries: food and drink are not compared (categories.NOT_LISTED)
+    dst.execute(f"DELETE FROM items WHERE cat IN ({','.join('?' * len(NOT_LISTED))})", sorted(NOT_LISTED))
     kept = {r[0] for r in dst.execute("SELECT id FROM items")}
     items = [i for i in items if i[0] in kept]
     # barcodes -> products, for "Skano" (scan a barcode in a shop or at home and see every shop's price)
