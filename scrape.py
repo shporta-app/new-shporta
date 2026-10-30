@@ -132,6 +132,24 @@ def strip_html(s):
     return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", s or ""))).strip()
 
 
+# a shop's own field for the size ("Sasia", "Vëllimi", "Madhësia", "Pesha", "Size", "Volume")
+SIZE_FIELD = re.compile(r"sasi|v[eë]llim|madh[eë]si|pesh|size|volum|kapacitet|weight|gramatur|ml\b", re.I)
+
+
+def with_size(title, fields=(), text=""):
+    """The product's name with the size the shop states on the same page, when the name itself has none: from the
+    shop's size field (one value only), else from the description when it names exactly one size. Many shops write
+    "Sasia: 50 ml" next to the name instead of in it; without this they looked like shops that don't state the size."""
+    from match import SIZE_RE, fold, size_label, size_of
+    if SIZE_RE.search(fold(title or "")):
+        return title
+    for name, values in fields:
+        if SIZE_FIELD.search(name or "") and len(values) == 1 and (m := SIZE_RE.search(fold(values[0] or ""))):
+            return f"{title} - {size_label(*size_of(m))}"
+    found = {size_of(m) for m in SIZE_RE.finditer(fold(strip_html(text)))}
+    return f"{title} - {size_label(*found.pop())}" if len(found) == 1 else title
+
+
 # ---------------------------------------------------------------- adapters
 
 def scrape_shopify(c, max_pages):
@@ -152,6 +170,8 @@ def scrape_shopify(c, max_pages):
                 if price is None:
                     continue
                 title = p["title"] if v.get("title") in (None, "Default Title") else f'{p["title"]} - {v["title"]}'
+                if len(p.get("variants", [])) == 1:
+                    title = with_size(title, [(o.get("name"), o.get("values") or []) for o in p.get("options", [])], p.get("body_html"))
                 yield dict(
                     external_id=str(v["id"]), url=f'{c.base}/products/{p["handle"]}?variant={v["id"]}',
                     title=title, brand=p.get("vendor"), category_raw=p.get("product_type") or ", ".join(p.get("tags", [])[:5]),
@@ -197,6 +217,9 @@ def _woo_row(p, parent=None):
         label = ", ".join(x.split("::")[-1].strip() for x in strip_html(p.get("variation") or "").split(", ") if x.strip())
         if label and label.lower() not in title.lower():
             title = f"{title} - {label}"
+    if not parent:
+        title = with_size(title, [(a.get("name"), [t.get("name") for t in a.get("terms") or []]) for a in p.get("attributes") or []],
+                          f'{p.get("short_description") or ""} {p.get("description") or ""}')
     return dict(
         external_id=str(p["id"]), url=p.get("permalink") or base.get("permalink"), title=title,
         brand=", ".join(b["name"] for b in base.get("brands", [])) or None,
@@ -317,8 +340,12 @@ def scrape_jsonld(c, max_pages):
                     img = img[0] if isinstance(img, list) and img else img
                     img = img.get("url") if isinstance(img, dict) else img
                     ext = o.get("sku") or p.get("sku") or p.get("productID") or f"{url}#{i}"
+                    props = [(x.get("name"), [str(x.get("value") or "")]) for x in p.get("additionalProperty") or [] if isinstance(x, dict)]
+                    if isinstance(p.get("size"), str):
+                        props.append(("size", [p["size"]]))
+                    name = with_size(strip_html(p.get("name")), props, p.get("description") if len(offers) == 1 else "")
                     yield dict(
-                        external_id=str(ext), url=o.get("url") or url, title=strip_html(p.get("name")),
+                        external_id=str(ext), url=o.get("url") or url, title=name,
                         brand=brand if isinstance(brand, str) else None, category_raw=p.get("category") if isinstance(p.get("category"), str) else None,
                         image=img if isinstance(img, str) else None,
                         gtin=p.get("gtin13") or p.get("gtin") or p.get("gtin8") or o.get("gtin13"),

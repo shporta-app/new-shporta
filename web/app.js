@@ -583,7 +583,7 @@ async function pageItem(id) {
   const unconfirmed = (it.unconfirmed || []).map((o) => `<tr class="${o.in_stock ? "" : "out"}">
       <td><b>${mono(o.shop)}${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
-      <td>${o.in_stock ? "Madhësia s'tregohet" : "S'ka gjendje"}</td>
+      <td>${o.in_stock ? "Kontrollo madhësinë" : "S'ka gjendje"}</td>
       <td>${shopLink(o, it.id, "produkt", "btn btn-ghost")}</td>
     </tr>`).join("");
   const story = multiShop && cheap && dear && hi > lo
@@ -625,10 +625,10 @@ async function pageItem(id) {
         </form>` : ""}
         ${multiShop || (it.history || []).length > 1 ? (() => { const v = priceVerdict(it.history || [], lo);
           return `<div class="verdict ${v.kind}"><p>${v.text}</p>${priceChart(it.history || [], it.currency)}</div>`; })() : ""}
-        ${multiShop && it.size_note === 2 ? `<p class="size-warn">Asnjë nga këto dyqane nuk e shkruan madhësinë te produkti.
+        ${multiShop && it.size_note === 2 ? `<p class="size-warn">Te emrat e produktit në këto dyqane nuk e gjetëm madhësinë.
           I krahasuam sepse emri është i njëjtë dhe çmimet janë brenda 25% të njëri-tjetrit. Kontrollo madhësinë te dyqani para se të blesh.</p>` : ""}
-        ${unconfirmed ? `<h2 class="sub">edhe këto dyqane e kanë, pa e shkruar madhësinë</h2>
-          <p class="note">Nuk i krahasojmë dhe nuk i numërojmë te më i liri, sepse nuk e dimë nëse është ${it.size ? esc(it.size) : "e njëjta madhësi"}. Kontrollo madhësinë te dyqani.</p>
+        ${unconfirmed ? `<h2 class="sub">Edhe këto dyqane e kanë</h2>
+          <p class="note">Madhësinë te këto dyqane nuk e lexuam dot, ndaj nuk i krahasojmë dhe nuk i numërojmë te më i liri. Mund të jetë ${it.size ? esc(it.size) : "e njëjta madhësi"}: kontrolloje te dyqani.</p>
           <table class="offers unconfirmed"><tbody>${unconfirmed}</tbody></table>` : ""}
         ${unitValue(it)}
         <p class="note">${multiShop
@@ -644,7 +644,7 @@ async function pageItem(id) {
     ${it.dupe_of && it.dupe_of.length ? `<section class="section apart"><h2>alternativë më e lirë e</h2>
       <p class="lead">Ky produkt kushton më pak se origjinali. ${esc(DUPE_WHY[it.dupe_of[0].kind] || "")}</p>
       <div class="dps">${it.dupe_of.map((r) => dupePair(r)).join("")}</div></section>` : ""}
-    ${(it.other_sizes || []).length ? `<section class="section"><h2>i njëjti produkt, madhësi tjetër</h2><p class="lead">I njëjti emër, por madhësi tjetër ose dyqani nuk e shkruan madhësinë. Nuk krahasohen me çmimet më sipër.</p>
+    ${(it.other_sizes || []).length ? `<section class="section"><h2>i njëjti produkt, madhësi tjetër</h2><p class="lead">I njëjti emër, por madhësi tjetër, ose madhësi që nuk e lexuam dot. Nuk krahasohen me çmimet më sipër.</p>
       <div class="grid">${it.other_sizes.map(tile).join("")}</div></section>` : ""}
     ${it.similar.length ? `<section class="section apart"><h2>produkte të ngjashme</h2><p class="lead">Emër i ngjashëm: nuk e konfirmojmë që është i njëjti produkt. Nga dyqane të tjera, më të lirat së pari.</p>
       <div class="grid">${it.similar.map(tile).join("")}</div></section>` : ""}
@@ -887,7 +887,7 @@ async function pageShare(params) {
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
       <td>${shopLink(o, o.item, "ndaj", "btn btn-ghost")}</td></tr>`;
     // the same product name at shops whose size we can't confirm as the same: their own size is shown, never compared
-    const sameRow = (o) => `<tr><td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.size ? `madhësia: ${o.size}` : "dyqani nuk e shkruan madhësinë")}</span>${o.in_stock ? "" : `<span class="t">s'ka gjendje tani</span>`}</td>
+    const sameRow = (o) => `<tr><td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.size ? `madhësia: ${o.size}` : "madhësinë kontrolloje te dyqani")}</span>${o.in_stock ? "" : `<span class="t">s'ka gjendje tani</span>`}</td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
       <td>${shopLink(o, o.item, "ndaj", "btn btn-ghost")}</td></tr>`;
     const headline = exact.length
@@ -899,9 +899,9 @@ async function pageShare(params) {
     main.innerHTML = `<div class="wrap">
       <div class="page-head"><h1>${esc(title || "produkti yt")}</h1>
         <p>${headline}
-          ${exact.length && r.query.size_assumed ? " Faqja e dyqanit nuk e shkruan madhësinë: e krahasuam sipas çmimit, kontrolloje te dyqani." : ""}</p></div>
+          ${exact.length && r.query.size_assumed ? " Madhësinë te kjo faqe nuk e lexuam dot: e krahasuam sipas çmimit, kontrolloje te dyqani." : ""}</p></div>
       ${exact.length ? block("i njëjti produkt", exact.slice(0, 12).map((o) => offerRow(o, false)).join("")) : ""}
-      ${same.length ? block(exact.length ? "edhe këto dyqane e kanë, në madhësi tjetër ose pa e shkruar madhësinë" : "i njëjti produkt, madhësia nuk konfirmohet",
+      ${same.length ? block(exact.length ? "edhe këto dyqane e kanë, në madhësi tjetër ose me madhësi që nuk e lexuam dot" : "i njëjti produkt, madhësia nuk konfirmohet",
           same.slice(0, 12).map(sameRow).join(""), "unconfirmed") : ""}
       ${!exact.length && !same.length && (r.similar || []).length ? block("të ngjashme: nuk e konfirmojmë që është i njëjti produkt", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join(""), "apart") : ""}
       ${(r.dupes || []).length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
