@@ -49,13 +49,28 @@ function nice(t, size) {
     s = s.split(" ").map((w) => ACRONYM.test(w) || /\d/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
   return s;
 }
+function mono(shop) {
+  const name = shopName(shop);
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `<span class="mono" style="--h:${h}" aria-hidden="true">${esc(name.charAt(0).toUpperCase())}</span>`;
+}
+const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+// a sheet at the bottom leaves the way it came in, then goes away
+function dismiss(el) {
+  if (!el) return;
+  if (calm() || !el.animate) return el.remove();
+  el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(16px)" }], { duration: 180, easing: EASE_OUT })
+    .finished.then(() => el.remove(), () => el.remove());
+}
 const shopName = (d) => String(d || "").replace(/^www\./, "");
 const plural = (n, one, many) => `${n.toLocaleString("en").replace(/,/g, " ")} ${n === 1 ? one : many}`;
 // Shopify shops serve any picture at the width asked for: 500 px is sharp on a phone and about a quarter of the bytes
 const small = (src) => /^https:\/\/(cdn\.shopify\.com\/|[^/]+\/cdn\/shop\/)/.test(src) && !/[?&]width=/.test(src)
   ? src + (src.includes("?") ? "&" : "?") + "width=500" : src;
 const img = (src, alt = "") =>
-  src ? `<img src="${esc(small(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'noimg',textContent:'Pa foto'}))">`
+  src ? `<img src="${esc(small(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-fade onload="this.classList.add('in')" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'noimg',textContent:'Pa foto'}))">`
       : `<span class="noimg">Pa foto</span>`;
 
 // Every link to a shop goes through /go/: we count the click and tag it utm_source=shporta.
@@ -316,9 +331,9 @@ function tile(it) {
     ? `<small>kursen deri ${lek(it.max_price - it.min_price, it.currency)}</small>` : "";
   return `<a class="tile" href="/produkt/${esc(it.id)}" data-link>
     <span class="pic">${img(it.image, it.title)}${range && it.save_pct >= 5 ? `<span class="off">−${it.save_pct}%</span>` : ""}</span>
-    ${it.shops > 1 ? `<span class="chip">${plural(it.shops, "dyqan", "dyqane")}</span>` : ""}
     <span class="name">${esc(nice(it.title, it.size))}</span>${it.size ? `<span class="size">${esc(it.size)}</span>` : ""}
-    <span class="meta"><span class="num">${it.shops > 1 ? "nga " : ""}${lek(it.min_price, it.currency)}</span>${range}</span>
+    <span class="meta"><span class="num">${it.shops > 1 ? "nga " : ""}${lek(it.min_price, it.currency)}</span>${it.shops > 1
+      ? `<small>në ${plural(it.shops, "dyqan", "dyqane")}</small>` : ""}</span>
   </a>`;
 }
 
@@ -352,6 +367,38 @@ function dupePair(r, { showOrig = true } = {}) {
     <div class="dp-why"><span class="save">−${r.save_pct}%${r.orig_size && r.dupe_size && r.orig_size !== r.dupe_size ? " për ml" : ""}</span>
       <span class="chip">${esc(r.reason)}</span><small>${DUPE_WHY[r.kind] || ""}</small></div>
   </div>`;
+}
+
+// long lists show a handful at a time; "Shfaq më shumë" adds the next ones under them (and asks the server for the
+// next page when what we have runs out). box: the list's element, already on the page. next(page) -> {items}
+const STEP = 12;
+function growList(box, { items, render, total, page = 0, next = null, step = STEP, noun = ["produkt", "produkte"] }) {
+  if (!box) return;
+  const buf = items.slice();
+  let shown = 0, busy = false;
+  const foot = document.createElement("div");
+  foot.className = "grow";
+  foot.innerHTML = `<p class="grow-count"></p><button type="button" class="btn btn-ghost">Shfaq më shumë</button>`;
+  box.after(foot);
+  const btn = foot.querySelector("button"), count = foot.querySelector(".grow-count");
+  const add = async () => {
+    if (busy) return;
+    busy = true;
+    if (buf.length < step && shown + buf.length < total && next) {
+      btn.textContent = "Duke ngarkuar…";
+      try { buf.push(...(await next(++page)).items); } catch { page--; }
+      btn.textContent = "Shfaq më shumë";
+    }
+    const part = buf.splice(0, step);
+    box.insertAdjacentHTML("beforeend", part.map(render).join(""));
+    shown += part.length;
+    const left = Math.max(total - shown, 0);
+    count.textContent = `${shown} nga ${total} ${total === 1 ? noun[0] : noun[1]}`;
+    foot.hidden = !left || (!buf.length && !next);
+    busy = false;
+  };
+  btn.onclick = add;
+  add();
 }
 
 function pager(data, base) {
@@ -412,7 +459,7 @@ async function pageHome() {
   <section class="section"><div class="wrap">
     <div class="section-head"><h2>diferencat më të mëdha tani</h2></div>
     <p class="lead">I njëjti produkt, në stok në të paktën tre dyqane. Përqindja tregon sa më lirë është te dyqani më i lirë.</p>
-    <div class="deals">${d.deals.map(deal).join("")}</div>
+    <div class="deals" id="home-deals"></div>
   </div></section>
 
   <section class="section"><div class="wrap">
@@ -439,6 +486,7 @@ async function pageHome() {
         <li>Blej aty ku është më lirë.</li></ol>
     </div>
   </div></section>`;
+  growList(document.getElementById("home-deals"), { items: d.deals, render: deal, total: d.deals.length, step: 8 });
   const next = document.getElementById("next");
   if (next) next.onclick = () => {
     fi = (fi + 1) % d.featured.length;
@@ -499,10 +547,11 @@ async function pageCategory(cat, params) {
       </fieldset>
       <label>Dyqani <select name="shop"><option value="">Të gjitha</option>${d.shops.map((s) => opt(s, shopName(s), q.get("shop"))).join("")}</select></label>
     </form>
-    ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
+    ${d.items.length ? `<div class="grid" id="list"></div>`
       : `<div class="empty"><b>Asnjë produkt me këto filtra.</b>Hiq një filtër ose zgjidh një dyqan tjetër.</div>`}
-    ${pager(d, location.pathname + location.search)}
   </div>`;
+  growList(document.getElementById("list"), { items: d.items, render: tile, total: d.total, page: d.page,
+    next: (p) => { const n = new URLSearchParams(q); n.set("page", p); return api(`/api/category/${encodeURIComponent(cat)}?${n}`); } });
   document.getElementById("filters").onchange = (e) => {
     const f = new FormData(e.currentTarget);
     const p = new URLSearchParams();
@@ -523,15 +572,16 @@ async function pageItem(id) {
   const diffCell = (o) => !multiShop || o.currency !== it.currency ? "Në stok"
     : o.price === lo ? `<span class="diff best">Më i liri</span>` : `<span class="diff">+${lek(o.price - lo, o.currency)}</span>`;
   if (multiShop) noteOffers(it, it.offers);
-  const rows = it.offers.map((o) => `<tr class="${o.in_stock ? "" : "out"}">
-      <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span>${o.risk ? `<span class="risk">Shumë më lirë se dyqanet e tjera: kontrollo që është origjinal dhe e njëjta madhësi.</span>` : ""}</td>
+  const fold = it.offers.length > 8;  // many shops: the cheapest 6 first, the rest one tap away
+  const rows = it.offers.map((o, i) => `<tr class="${o.in_stock ? "" : "out"}${o.in_stock && o.price === lo && multiShop ? " is-best" : ""}${fold && i >= 6 ? " extra" : ""}">
+      <td><b>${mono(o.shop)}${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span>${o.risk ? `<span class="risk">Shumë më lirë se dyqanet e tjera: kontrollo që është origjinal dhe e njëjta madhësi.</span>` : ""}</td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span>${o.regular_price > o.price ? `<br><s class="t">${lek(o.regular_price, o.currency)}</s>` : ""}${priceNote(o)}</td>
       <td>${o.in_stock ? diffCell(o) : "S'ka gjendje"}</td>
       <td>${shopLink(o, it.id, "produkt", `btn ${o.in_stock && o.price === lo ? "" : "btn-ghost"}`)}</td>
     </tr>`).join("");
   // shops that sell it without writing the size: shown, but never compared (we can't confirm it's the same size)
   const unconfirmed = (it.unconfirmed || []).map((o) => `<tr class="${o.in_stock ? "" : "out"}">
-      <td><b>${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
+      <td><b>${mono(o.shop)}${esc(shopName(o.shop))}</b><span class="t">${esc(o.title)}</span></td>
       <td class="p"><span class="num">${lek(o.price, o.currency)}</span></td>
       <td>${o.in_stock ? "Madhësia s'tregohet" : "S'ka gjendje"}</td>
       <td>${shopLink(o, it.id, "produkt", "btn btn-ghost")}</td>
@@ -547,15 +597,22 @@ async function pageItem(id) {
         <h1>${esc(nice(it.title, it.size))}</h1>
         ${it.used ? `<p class="size-warn">Artikull i përdorur (second-hand / vintage). Nuk e krahasojmë me produkte të reja.</p>` : ""}
         ${it.size ? `<p class="size-line">Krahasojmë vetëm madhësinë <b>${esc(it.size)}</b>. Çdo dyqan më poshtë e shkruan këtë madhësi te produkti.</p>` : ""}
-        <div class="summary">
+        ${cheap && multiShop ? `<div class="best-card">
+            ${mono(cheap.shop)}<span class="bc-shop"><small>Më i liri sot</small><b>${esc(shopName(cheap.shop))}</b></span>
+            <b class="bc-price num">${lek(lo, it.currency)}</b>
+            ${shopLink(cheap, it.id, "produkt", "btn btn-ink")}
+          </div>
+          <p class="spread">${live.length > 1 && hi > lo ? `Te dyqanet e tjera deri në <b class="num">${lek(hi, it.currency)}</b>. Kursen deri
+            <b class="num">${lek(hi - lo, it.currency)}</b>. ` : ""}${plural(it.offers.length, "dyqan", "dyqane")} e shesin këtë produkt.</p>`
+        : `<div class="summary">
           ${live.length ? `<div class="low">Më i liri<b>${lek(lo, it.currency)}</b></div>`
             : `<div>S'ka gjendje askund<b>${lek(lo, it.currency)}</b></div>`}
-          ${live.length > 1 && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
           <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
-        </div>
+        </div>`}
         ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
         <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
+          ${fold ? `<button type="button" class="btn btn-ghost more-shops" onclick="this.previousElementSibling.classList.add('all');this.remove()">Shfaq të gjitha dyqanet (${it.offers.length})</button>` : ""}
         ${story}
         <p class="watch"><button type="button" class="btn" id="basket-add" aria-pressed="${inBasket(it.id)}"></button>
           <button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
@@ -598,6 +655,12 @@ async function pageItem(id) {
     bar.innerHTML = `<span><small>Më i liri te ${esc(shopName(cheap.shop))}</small><b class="num">${lek(lo, it.currency)}</b></span>
       ${shopLink(cheap, it.id, "produkt", "btn", "Hape në dyqan")}`;
     main.append(bar);
+    // the card with the cheapest shop says the same: the bar comes once the card has scrolled away
+    const card = main.querySelector(".best-card");
+    if (card && "IntersectionObserver" in window) {
+      bar.classList.add("wait");
+      new IntersectionObserver(([e]) => bar.classList.toggle("wait", e.isIntersecting || e.boundingClientRect.top > 0)).observe(card);
+    }
   }
   const bb = document.getElementById("basket-add");
   const blabel = () => { bb.textContent = inBasket(it.id) ? "Në shportë ✓" : "Shto në shportë"; bb.setAttribute("aria-pressed", inBasket(it.id)); };
@@ -714,7 +777,7 @@ async function pageReport(month) {
       <div class="table-scroll"><table class="offers shops-table"><thead><tr><th>Dyqani</th><th>Më i liri</th><th>Zakonisht mbi më të lirin</th><th>Produkte</th></tr></thead>
         <tbody>${shops}</tbody></table></div></section>
     <section class="section"><h2>diferencat më të mëdha në lek</h2>
-      <div class="deals">${r.biggest.map(deal).join("")}</div></section>
+      <div class="deals" id="biggest"></div></section>
     <section class="section"><h2>si e llogaritëm</h2>
       <p class="note">Vetëm produkte të njëjta (marka, emri dhe madhësia), në stok në 3 ose më shumë dyqane, me çmim në lek. Për çdo dyqan merret çmimi i tij më i ulët për atë produkt.
         Diferencat mbi 70% lihen jashtë, sepse zakonisht janë dy produkte të ndryshme. Mund ta citosh këtë raport me link te shporta.app/raport dhe datën.
@@ -722,6 +785,7 @@ async function pageReport(month) {
     ${others.length ? `<section class="section"><h2>raportet e muajve</h2><p class="cats">${others.map((m) =>
       `<a href="/raport/${m}" data-link>${esc(monthSq(m))}</a>`).join("")}</p></section>` : ""}
   </div>`;
+  growList(document.getElementById("biggest"), { items: r.biggest, render: deal, total: r.biggest.length, step: 8 });
 }
 
 // on the home page: products in the visitor's list that are cheaper now than when they saved them
@@ -749,10 +813,11 @@ async function pageSearch(params) {
   main.innerHTML = `<div class="wrap">
     <div class="page-head"><h1>${esc(term)}</h1><p>${d.corrected ? `Treguam rezultatet për <b>${esc(d.corrected)}</b>. ` : ""}${plural(d.total, "produkt", "produkte")}. Më të përshtatshmit dalin të parët.</p></div>
     <div style="height:22px"></div>
-    ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
+    ${d.items.length ? `<div class="grid" id="list"></div>`
       : `<div class="empty"><b>Nuk gjetëm "${esc(term)}".</b>Provo një fjalë më të shkurtër, emrin e markës, ose shkruaje pa ë dhe ç.</div>`}
-    ${pager(d, location.pathname + location.search)}
   </div>`;
+  growList(document.getElementById("list"), { items: d.items, render: tile, total: d.total, page: d.page,
+    next: (p) => { const n = new URLSearchParams(q); n.set("page", p); return api(`/api/search?${n}`); } });
 }
 
 const SHOP_GROUPS = { beauty: "Kozmetikë dhe farmaci", perfume: "Parfume", clothing: "Veshje", shoes: "Këpucë",
@@ -780,11 +845,14 @@ async function pageDupes(params) {
     <div class="page-head"><h1>dupe</h1>
       <p>${plural(d.total, "produkt i shtrenjtë", "produkte të shtrenjta")} me një alternativë të paktën 30% më të lirë. Jo i njëjti produkt: për secilin themi pse e quajmë dupe.</p></div>
     <nav class="tabs" aria-label="Lloji">${tab(null, "Të gjitha")}${tab("inspired", "Parfume")}${tab("active", "Kujdesi i lëkurës")}${tab("known", "Grim")}</nav>
-    ${d.items.length ? `<div class="dps">${d.items.map((r) => dupePair(r) + (r.count > 1
-      ? `<a class="dp-more" href="/produkt/${esc(r.orig_id)}" data-link>Edhe ${r.count - 1} dupe të tjera për këtë produkt</a>` : "")).join("")}</div>`
+    ${d.items.length ? `<div class="dps" id="list"></div>`
       : `<div class="empty"><b>Asnjë dupe këtu ende.</b>Provo një kategori tjetër.</div>`}
-    ${pager(d, location.pathname + location.search)}
   </div>`;
+  growList(document.getElementById("list"), { items: d.items, total: d.total, page: d.page, step: 6,
+    noun: ["produkt i shtrenjtë", "produkte të shtrenjta"],
+    render: (r) => dupePair(r) + (r.count > 1
+      ? `<a class="dp-more" href="/produkt/${esc(r.orig_id)}" data-link>Edhe ${r.count - 1} dupe të tjera për këtë produkt</a>` : ""),
+    next: (p) => { const n = new URLSearchParams(q); n.set("page", p); return api(`/api/dupes?${n}`); } });
 }
 
 // "Share to shporta": the phone's Share menu opens /ndaj?title=…&text=…&url=… (installed web app on Android).
@@ -948,7 +1016,7 @@ function setConsent(choice) {
   if (choice === "all" && !getCookie("sp_id"))
     document.cookie = `sp_id=${crypto.randomUUID()}; Max-Age=${year}; Path=/; SameSite=Lax${secure}`;
   if (choice !== "all") document.cookie = "sp_id=; Max-Age=0; Path=/";
-  document.getElementById("consent")?.remove();
+  dismiss(document.getElementById("consent"));
   if (location.pathname === "/privatesia") pagePrivacy();
 }
 function consentBanner() {
@@ -989,10 +1057,14 @@ function basketBadge() {
   const a = document.getElementById("nav-basket");
   if (!a) return;
   const n = basketList().reduce((t, b) => t + b.qty, 0);
+  const more = basketBadge.n !== undefined && n > basketBadge.n;
+  basketBadge.n = n;
   a.querySelector("span").textContent = n ? n : "";
   a.classList.toggle("has", n > 0);
   const t = document.querySelector(".tab-basket b");
   if (t) t.textContent = n ? n : "";
+  if (more && !calm()) [a.querySelector("span"), t].forEach((b) => b && b.animate &&
+    b.animate([{ transform: "scale(1)" }, { transform: "scale(1.35)" }, { transform: "scale(1)" }], { duration: 320, easing: EASE_OUT }));
 }
 
 // items: [{id, title, qty, offers: [{shop, price}]}] -> the plans worth showing, cheapest first
@@ -1386,7 +1458,11 @@ async function route() {
   if (pathname.startsWith("/njoftim/") && main.hasAttribute("data-ssr")) return;
   // the first page already came from the server (seo.py): keep it on screen until the full one is ready
   if (main.hasAttribute("data-ssr")) main.removeAttribute("data-ssr");
-  else main.innerHTML = `<div class="wrap loading">Duke ngarkuar…</div>`;
+  else {
+    const was = main.firstElementChild;
+    setTimeout(() => { if (main.firstElementChild === was) main.innerHTML = `<div class="wrap skel" aria-busy="true"><span class="sr">Duke ngarkuar…</span>
+      <i class="sk-title"></i><i class="sk-line"></i><div class="grid">${"<i class=sk-tile></i>".repeat(4)}</div></div>`; }, 150);
+  }
   document.title = "shporta: krahaso çmimet në dyqanet online të Shqipërisë";
   try {
     let m;
@@ -1419,7 +1495,11 @@ async function route() {
 function go(url) {
   history.pushState(null, "", url);
   window.scrollTo(0, 0);
-  route().then(() => main.focus({ preventScroll: true }));
+  route().then(() => {
+    main.focus({ preventScroll: true });
+    if (main.animate) main.animate(calm() ? [{ opacity: 0 }, { opacity: 1 }]
+      : [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: EASE_OUT });
+  });
 }
 
 document.addEventListener("click", (e) => {
