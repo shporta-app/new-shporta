@@ -440,7 +440,7 @@ function receiptBox(r) {
   return r ? `<div class="receipt" aria-label="Rutina bazë e kujdesit për lëkurën">
       <div class="receipt-head"><span>Rutina bazë e lëkurës</span><span>Më lirë</span><span>Më shtrenjtë</span></div>
       ${r.steps.map((s) => `<a class="receipt-row" href="/produkt/${esc(s.id)}" data-link>
-          <span><small>${esc(s.step)}</small>${esc(s.title)}</span>
+          <span><small>${esc(s.step)}</small>${esc(nice(s.title, s.size))}</span>
           <span class="num">${lek(s.min_price)}</span><span class="num dear">${lek(s.max_price)}</span></a>`).join("")}
       <div class="receipt-total"><span>Gjithsej</span><span class="num">${lek(r.cheapest)}</span><span class="num dear">${lek(r.dearest)}</span></div>
       <div class="receipt-diff"><span>Paguan më shumë për të njëjtat produkte</span><b class="num">${lek(r.difference)}</b></div>
