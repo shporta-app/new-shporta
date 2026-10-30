@@ -150,6 +150,11 @@ def page_num(q):
 LISTED = "shops >= 2 AND cat NOT IN ('ushqime')"  # no groceries (categories.NOT_LISTED)
 
 
+def listed(t):
+    """LISTED for a query that joins items under the name t (other tables have a cat column too)."""
+    return f"{t}.shops >= 2 AND {t}.cat NOT IN ('ushqime')"
+
+
 def listed_ids(ids):
     ids = list(ids)
     return {r[0] for r in db().execute(f"SELECT id FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(ids))})", ids)}         if ids else set()
@@ -365,7 +370,7 @@ def category(cat, q):
     items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {sql} ORDER BY {order} LIMIT ? OFFSET ?",
                       args + [PAGE_SIZE, page * PAGE_SIZE])
     shops = [r[0] for r in db().execute(
-        f"""SELECT p.shop FROM products p JOIN items i ON i.id = p.item_id WHERE i.cat = ? AND i.{LISTED} AND p.in_compare = 1
+        f"""SELECT p.shop FROM products p JOIN items i ON i.id = p.item_id WHERE i.cat = ? AND {listed('i')} AND p.in_compare = 1
             GROUP BY p.shop ORDER BY COUNT(*) DESC LIMIT 40""", (cat,))]
     return {"id": cat, "label": CATEGORIES.get(cat, "Të tjera"), "total": total, "page": page,
             "page_size": PAGE_SIZE, "items": items, "shops": shops}
