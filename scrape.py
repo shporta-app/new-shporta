@@ -31,6 +31,8 @@ UA = "PhiaALBot/0.1 (+price comparison for Albanian shoppers)"
 HERE = Path(__file__).parent
 DB_PATH = HERE / "data" / "phia.db"
 MIN_DELAY = 1.0
+# shops that answered 429 at our usual pace: slower for them, so they never have to refuse us
+SLOW = {"farmaon.al": 5.0}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS shops (
@@ -71,7 +73,8 @@ class Client:
             self.sitemaps = (self.rp.site_maps() or []) if ok else []
         except requests.RequestException:
             self.rp.parse([])
-        self.delay = max(MIN_DELAY, float(self.rp.crawl_delay(UA) or self.rp.crawl_delay("*") or 0))
+        self.delay = max(MIN_DELAY, SLOW.get(self.base.split("/")[2].removeprefix("www."), 0),
+                         float(self.rp.crawl_delay(UA) or self.rp.crawl_delay("*") or 0))
         self._last = 0.0
 
     def allowed(self, url):

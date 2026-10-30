@@ -11,3 +11,13 @@ www.orientaldream.al
 # SiteGround shows the server a captcha page (sgcaptcha, tested 2026-10-27); a home connection gets the shop
 jbl.al
 cheapstore.al
+# Refuse the server (403 challenge, 429, timeouts or 503, 2026-10-23..30) but answer a home connection (tested 2026-10-30)
+fashionandfriends.com
+7cosmetics.al
+buzistore.com
+www.parfumearabe.al
+farmaon.al
+foleja.al
+medigreen.al
+myoptika.al
+baronesha.al
