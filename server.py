@@ -1228,4 +1228,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"listening on :{PORT}", flush=True)
+    threading.Thread(target=push.morning, args=(DB_FILE, lambda m: print(json.dumps({"push": m}), flush=True)),
+                     daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

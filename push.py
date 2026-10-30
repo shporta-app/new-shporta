@@ -246,8 +246,28 @@ def message(drops):
             "url": "/njoftime", "tag": "drops"}
 
 
+SEND_FROM, SEND_UNTIL = 9, 21  # local time: price drops found at night wait for the morning, so no phone buzzes at 3 am
+
+
+def morning(seed_db, log=print):
+    """Runs inside the site (server.py), in its own thread: once a day, between 09:00 and 21:00, send the price drops
+    of the night. The day it last ran is kept in a file, so a restart neither skips the day nor sends twice."""
+    done = alerts.DB.parent / "push_last.txt"
+    while True:
+        now = datetime.now()
+        today = now.date().isoformat()
+        last = done.read_text().strip() if done.exists() else ""
+        if SEND_FROM <= now.hour < SEND_UNTIL and last != today:
+            done.write_text(today)
+            try:
+                check(seed_db, log)
+            except Exception as e:
+                log(f"push failed: {type(e).__name__}: {e}")
+        time.sleep(60)
+
+
 def check(seed_db, log=print):
-    """After the nightly rebuild: one notification per device whose products are now cheaper than when we last told
+    """Each morning, after the nightly rebuild (see morning): one notification per device whose products are now cheaper than when we last told
     it. Same rule as the emails: an in-stock price, same currency, same product and size (the item id)."""
     if not alerts.DB.exists():
         return

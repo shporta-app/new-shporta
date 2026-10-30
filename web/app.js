@@ -167,7 +167,7 @@ function pushCard(el) {
     const on = Boolean(sub) && Notification.permission === "granted";
     const state = on ? "Aktive në këtë pajisje" : Notification.permission === "denied" ? "Të bllokuara në këtë shfletues" : "Joaktive";
     el.innerHTML = `<h2>njoftime në telefon dhe kompjuter</h2>
-      <p>Një njoftim kur bie çmimi i një produkti që ndjek, edhe kur shporta është e mbyllur. Kontrollojmë një herë në ditë, pas përditësimit të çmimeve. Pa llogari dhe pa email.</p>
+      <p>Një njoftim kur bie çmimi i një produkti që ndjek, edhe kur shporta është e mbyllur. Të njoftojmë një herë në ditë, në mëngjes (pas orës 9), pasi përditësohen çmimet. Pa llogari dhe pa email.</p>
       <div class="row"><span class="state${on ? " on" : ""}">${state}</span>
         ${on ? `<button type="button" class="btn" id="push-test">Dërgo një njoftim provë</button>` : ""}
         <button type="button" class="btn${on ? " btn-ghost" : ""}" id="push-toggle">${on ? "Çaktivizo njoftimet" : "Aktivizo njoftimet"}</button></div>
