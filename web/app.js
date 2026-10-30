@@ -51,8 +51,11 @@ function nice(t, size) {
 }
 const shopName = (d) => String(d || "").replace(/^www\./, "");
 const plural = (n, one, many) => `${n.toLocaleString("en").replace(/,/g, " ")} ${n === 1 ? one : many}`;
+// Shopify shops serve any picture at the width asked for: 500 px is sharp on a phone and about a quarter of the bytes
+const small = (src) => /^https:\/\/(cdn\.shopify\.com\/|[^/]+\/cdn\/shop\/)/.test(src) && !/[?&]width=/.test(src)
+  ? src + (src.includes("?") ? "&" : "?") + "width=500" : src;
 const img = (src, alt = "") =>
-  src ? `<img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'noimg',textContent:'Pa foto'}))">`
+  src ? `<img src="${esc(small(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'noimg',textContent:'Pa foto'}))">`
       : `<span class="noimg">Pa foto</span>`;
 
 // Every link to a shop goes through /go/: we count the click and tag it utm_source=shporta.
