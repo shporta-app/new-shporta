@@ -936,3 +936,6 @@ img[data-fade].in { opacity: 1; }
 table.offers:not(.all) tr.extra { display: none; }
 .more-shops { margin-top: 14px; }
 @media (max-width: 760px) { .more-shops { width: 100%; justify-content: center; } }
+/* the button sits above the (still invisible) camera picture, so the tap reaches it */
+.scan-start { position: relative; z-index: 2; }
+.scan-stage video { pointer-events: none; }
