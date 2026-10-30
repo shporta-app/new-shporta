@@ -44,20 +44,27 @@ def main():
     # Politeness is per shop and unchanged: one request at a time, robots.txt and Crawl-delay obeyed.
     keep = (lambda d: d in a.only_shops) if a.only_shops is not None else (lambda d: d not in a.skip)
     queue, running = [x for x in shops if keep(x[0])], {}
+    platform_of = {d: p for d, _, p in shops + slow}
     retry, retrying = [x for x in slow if keep(x[0])], set()
     while queue or retry or running:
         # the 429 shops: never more than one at a time, so we never come back as a burst
         if retry and not retrying & set(running):
             retrying.add(retry[0][0])
             queue.insert(0, retry.pop(0))
-        while queue and len(running) < a.workers + (1 if retrying & {queue[0][0]} else 0):
-            domain, category, platform = queue.pop(0)
+        # Shopify shops share one platform, and Shopify counts our requests to all of them together: one at a time,
+        # so its protection never sees a burst from us (on 2026-10-23 it answered 429 to most Shopify shops at once)
+        busy_shopify = any(platform_of.get(d) == "shopify" for d in running)
+        nxt = next((i for i, x in enumerate(queue) if x[2] != "shopify" or not busy_shopify), None)
+        while nxt is not None and len(running) < a.workers + (1 if retrying & {queue[nxt][0]} else 0):
+            domain, category, platform = queue.pop(nxt)
+            busy_shopify |= platform == "shopify"
             # custom adapters are picked up by domain; pass the platform only for the built-in ones
             cmd = [sys.executable, str(HERE / "scrape.py"), domain, "--category", category,
                    "--max-pages", str(MAX_PAGES.get(domain, 3000))]
             if platform in ("woocommerce", "shopify", "jsonld"):
                 cmd += ["--platform", platform]
             running[domain] = subprocess.Popen(cmd, cwd=HERE)
+            nxt = next((i for i, x in enumerate(queue) if x[2] != "shopify" or not busy_shopify), None)
         time.sleep(2)
         for domain, proc in list(running.items()):
             if proc.poll() is not None:  # one broken shop must not stop the rest

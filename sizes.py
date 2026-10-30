@@ -74,8 +74,14 @@ def main():
         sys.exit("no seed/phia-api.db yet")
     work = candidates()
     print(f"{sum(map(len, work.values()))} pages in {len(work)} shops", flush=True)
-    with ThreadPoolExecutor(6) as pool:  # shops side by side, each one page at a time at its own pace
-        total = sum(pool.map(lambda kv: read_shop(kv[0], kv[1], a.limit), work.items()))
+    con = db()
+    shopify = {d for d, in con.execute("SELECT domain FROM shops WHERE platform = 'shopify'")}
+    con.close()
+    # shops side by side, each one page at a time at its own pace; Shopify shops one after another (Shopify counts
+    # our requests to all its shops together, see refresh.py)
+    jobs = [[kv] for kv in work.items() if kv[0] not in shopify] + [[kv for kv in work.items() if kv[0] in shopify]]
+    with ThreadPoolExecutor(6) as pool:
+        total = sum(pool.map(lambda job: sum(read_shop(d, urls, a.limit) for d, urls in job), jobs))
     print(f"done: {total} sizes found", flush=True)
 
 
