@@ -468,7 +468,10 @@ SYNONYMS = [
     {"varese", "necklace"}, {"byzylyk", "bracelet"}, {"frigorifer", "fridge", "refrigerator"},
     {"rrobalarese", "lavatrice"}, {"divan", "sofa"}, {"karrige", "chair"},
     {"moisturising", "moisturizing", "moisturiser", "moisturizer", "hidratues"}, {"colour", "color"},
-    {"cleanser", "pastrues"}, {"sunscreen", "spf"}, {"toner", "tonik"},
+    {"cleanser", "pastrues"}, {"sunscreen", "spf", "dielli", "diellit"}, {"toner", "tonik"},
+    {"duar", "duarsh", "hand", "hands"}, {"fytyre", "fytyres", "face", "facial"}, {"trup", "trupi", "body"},
+    {"flok", "floke", "flokesh", "hair"}, {"buze", "buzesh", "lip", "lips"}, {"vaj", "oil"}, {"sapun", "soap"},
+    {"maske", "mask"}, {"thonj", "nail", "nails"},
 ]
 SYN_OF = {w: g for g in SYNONYMS for w in g}
 _vocab = None
@@ -520,21 +523,40 @@ def search_items(words, limit):
     return total, cand[:limit]
 
 
-def correct(words):
-    """A mistyped word ("cerave" typed "cereve", "parfume" typed "parfumm") -> the closest word in our names."""
+def sound(w):
+    """How a word sounds, roughly: people write brand names the way they say them in Albanian ("serave" for CeraVe,
+    "rosh pozai" for Roche-Posay, "savage" for Sauvage). Same consonants in the same order = sounds alike."""
+    w = re.sub(r"ch|sh|zh|xh|ç", "s", w).replace("ph", "f")
+    w = w.translate(str.maketrans("ckqzxwyj", "sssssvii"))
+    return re.sub(r"(.)\1+", r"\1", w[0] + re.sub(r"[aeiou]", "", w[1:]))
+
+
+_sounds = None
+
+
+def correct(words, force=False):
+    """A mistyped word ("cerave" typed "cereve" or "serave", "parfume" typed "parfumm") -> the closest word in our
+    names. force: also a word some odd name contains ("savage"), when the search found nothing at all."""
     import difflib
+    global _sounds
     vocab, out, changed = vocabulary(), [], False
+    if _sounds is None:
+        _sounds = collections.defaultdict(list)
+        for v in vocab:
+            _sounds[sound(v)].append(v)
     for w in words:
         table = "item_search" if HAS_ITEM_SEARCH else "items"
-        if len(w) < 4 or w in SYN_OF or db().execute(f"SELECT 1 FROM {table} WHERE search LIKE ? LIMIT 1", (f"%{w}%",)).fetchone():
+        known = w in vocab or db().execute(f"SELECT 1 FROM {table} WHERE search LIKE ? LIMIT 1", (f"%{w}%",)).fetchone()
+        if len(w) < 4 or w in SYN_OF or (known and not force) or vocab.get(w, 0) >= 10:
             out.append(w)
             continue
-        if w in vocab:
-            out.append(w)
-            continue
-        near = difflib.get_close_matches(w, [v for v in vocab if abs(len(v) - len(w)) <= 2 and v[0] == w[0]], n=6, cutoff=0.75)
+        key = sound(w)
+        near = set(difflib.get_close_matches(w, [v for v in vocab if abs(len(v) - len(w)) <= 2 and sound(v)[0] == key[0]], n=6, cutoff=0.75))
+        near |= {v for v in _sounds.get(key, ()) if abs(len(v) - len(w)) <= 3}
         # among close spellings, the word most of our products use ("nivae" -> "nivea", not "niva")
-        best = max(near, key=lambda v: (difflib.SequenceMatcher(None, w, v).ratio() >= 0.8, vocab[v]), default=None)
+        best = max(near, key=lambda v: (difflib.SequenceMatcher(None, w, v).ratio() >= 0.8, sound(v) == key, vocab[v]), default=None)
+        if best and known and vocab[best] <= 2 * vocab.get(w, 0):
+            best = None  # the word is used as typed: keep it
         out.append(best or w)
         changed |= bool(best)
     return out if changed else None
@@ -546,12 +568,13 @@ def search(q, page=0):
         return {"q": q, "total": 0, "items": []}
     total, items = search_items(words, (page + 1) * PAGE_SIZE)
     fixed = None
-    if total < 3 and (fixed := correct(words)):  # nothing or almost nothing: a typo? use the spelling that finds more
-        t2, i2 = search_items(fixed, (page + 1) * PAGE_SIZE)
-        if t2 > total:
-            total, items = t2, i2
-        else:
-            fixed = None
+    if total < 3:  # nothing or almost nothing: a typo? use the spelling that finds more
+        for f in (correct(words), total == 0 and correct(words, force=True)):
+            if not f or f == fixed:
+                continue
+            t2, i2 = search_items(f, (page + 1) * PAGE_SIZE)
+            if t2 > total:
+                total, items, fixed = t2, i2, f
     return {"q": q, "total": total, "page": page, "page_size": PAGE_SIZE, "items": items[page * PAGE_SIZE:],
             "corrected": " ".join(fixed) if fixed and total else None}
 
