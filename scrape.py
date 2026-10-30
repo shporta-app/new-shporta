@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS prices (
   PRIMARY KEY (product_id, day)
 );
 CREATE INDEX IF NOT EXISTS products_gtin ON products(gtin);
+CREATE TABLE IF NOT EXISTS page_sizes (url TEXT PRIMARY KEY, size TEXT, checked TEXT);
 """
 
 
@@ -132,22 +133,92 @@ def strip_html(s):
     return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", s or ""))).strip()
 
 
-# a shop's own field for the size ("Sasia", "Vëllimi", "Madhësia", "Pesha", "Size", "Volume")
-SIZE_FIELD = re.compile(r"sasi|v[eë]llim|madh[eë]si|pesh|size|volum|kapacitet|weight|gramatur|ml\b", re.I)
+# a shop's own field for the size ("Sasia", "Vëllimi", "Madhësia", "Zgjidhni dozimin", "Pesha", "Size", "Volume")
+SIZE_FIELD = re.compile(r"sasi|v[eë]llim|madh[eë]si|dozim|pesh|size|volum|kapacitet|weight|gramatur|ml\b", re.I)
+
+
+def sizes_in(fields=(), text=""):
+    """Every size a shop states for a product: in its size fields (each with one value) and in the text."""
+    from match import SIZE_RE, fold, size_of
+    out = set()
+    for name, values in fields:
+        if SIZE_FIELD.search(name or "") and len(values) == 1:
+            out |= {size_of(m) for m in SIZE_RE.finditer(fold(values[0] or ""))}
+    # in running text only a size with its label counts ("Formati: 50ml", "Sasia: 200 ml"): a description also
+    # names doses ("1-2 lugë, 15-30 ml"), samples and other products. No cosmetic comes in more than 5 l / 5 kg.
+    return out | {x for m in size_label_re().finditer(fold(strip_html(text))) if (x := size_of(m))[0] <= 5000}
+
+
+def size_label_re():
+    """A size written with its label: "Sasia: 50ml", "Formati 100 ml", "Zgjidhni dozimin: 30ml", "📏 Madhësia 70ml"."""
+    from match import SIZE_RE
+    return re.compile(r"\b(?:sasia|sasi|vellimi|volumi|formati|madhesia|paketimi|permbajtja|dozimin?|size|volume|"
+                      r"net wt|contenido|contenu|inhalt)\b\s*[:\-]?\s*" + SIZE_RE.pattern)
 
 
 def with_size(title, fields=(), text=""):
-    """The product's name with the size the shop states on the same page, when the name itself has none: from the
-    shop's size field (one value only), else from the description when it names exactly one size. Many shops write
-    "Sasia: 50 ml" next to the name instead of in it; without this they looked like shops that don't state the size."""
-    from match import SIZE_RE, fold, size_label, size_of
+    """The product's name with the size the shop states for it, when the name itself has none. Only when everything
+    the shop states agrees on one size: two sizes ("30 ml and 50 ml") is no size. Many shops write "Sasia: 50 ml"
+    next to the name instead of in it; without this they looked like shops that don't state the size."""
+    from match import SIZE_RE, fold, size_label
     if SIZE_RE.search(fold(title or "")):
         return title
-    for name, values in fields:
-        if SIZE_FIELD.search(name or "") and len(values) == 1 and (m := SIZE_RE.search(fold(values[0] or ""))):
-            return f"{title} - {size_label(*size_of(m))}"
-    found = {size_of(m) for m in SIZE_RE.finditer(fold(strip_html(text)))}
+    found = sizes_in(fields, text)
     return f"{title} - {size_label(*found.pop())}" if len(found) == 1 else title
+
+
+def page_size(html, title=""):
+    """The size a product's own page states ("50 ml"), or None. Read only from the product itself: its structured
+    data, its information table (not the shipping weight), the block that starts at its name (the line under it,
+    the price, "Formati: 50ml") and its description, never from "related products". The page's name must be the
+    product's (a shop's link can point at another product), and every place must agree on one size."""
+    from match import fold, size_label
+    body = re.sub(r"<script(?![^>]*ld\+json).*?</script>|<style.*?</style>", " ", html, flags=re.S | re.I)
+    want = {w for w in re.findall(r"[a-z0-9]{3,}", fold(title))}
+    names = lambda m: set(re.findall(r"[a-z0-9]{3,}", fold(strip_html(m.group(1)))))
+    # the heading that names this product: the theme's product title (an <h1>, sometimes an <h2>/<h3>), else an <h1>
+    # (a theme may put the shop's slogan in another <h1>); never the headings of "related products"
+    heads = [m for m in re.finditer(r"<h([1-3])([^>]*)>(.*?)</h\1>", body, re.S | re.I)
+             if "product_title" in m.group(2) or "product-title" in m.group(2) or m.group(1) == "1"]
+    heads.sort(key=lambda m: "product_title" not in m.group(2) and "product-title" not in m.group(2))
+    names = lambda m: set(re.findall(r"[a-z0-9]{3,}", fold(strip_html(m.group(3)))))
+    h1 = next((m for m in heads if not title or (want and len(want & names(m)) >= 0.6 * len(want))), None)
+    if title and not h1:
+        return None  # the page shows another product, or we can't tell which one it shows
+    from match import SIZE_RE, size_of
+    found = set()
+    # 1. the shop's own size fields: structured data, the information table (not the shipping weight)
+    for p in list(jsonld_products(html))[:1]:
+        props = [(x.get("name"), [str(x.get("value") or "")]) for x in p.get("additionalProperty") or [] if isinstance(x, dict)]
+        if isinstance(p.get("size"), str):
+            props.append(("size", [p["size"]]))
+        found |= sizes_in(props)
+    rows = re.findall(r'<tr[^>]*class="[^"]*woocommerce-product-attributes-item(?![^"]*--(?:weight|dimensions))[^"]*"[^>]*>\s*'
+                      r'<th[^>]*>(.*?)</th>\s*<td[^>]*>(.*?)</td>', html, re.S | re.I)
+    found |= sizes_in([(strip_html(a), [strip_html(b)]) for a, b in rows])
+    # 2. a size with its label in the product's own block ("Sasia: 50ml", "Formati: 50ml", "Zgjidhni dozimin: 50 ml")
+    # 3. a size on the line right under the product's name ("Hidratues me Acid Azelaik 30ml")
+    if h1:
+        text = strip_html(body[h1.start():h1.start() + 40000])[:4000]
+        end = re.search(r"related|upsell|cross-sell|recently|you may also|t[eë] ngjashme|best seller|produkte t[eë] tjera|"
+                        r"mund t[eë] ju p[eë]lqej|klient[eë]t bleu", text, re.I)
+        text = fold(text[:end.start()] if end else text)
+        label = size_label_re()
+        found |= {size_of(m) for m in label.finditer(text)}  # the size's two groups come first in the pattern
+        name = fold(strip_html(h1.group(3)))
+        after = text[len(name):len(name) + 160] if text.startswith(name) else ""
+        after = re.split(r"\d[\d ,.]*\s*(?:l|lek|leke|all|eur|€)\b", after)[0]  # up to the price
+        found |= {size_of(m) for m in SIZE_RE.finditer(after) if m.group(2) not in ("l", "lt")}
+    # 4. the shop's full name of the product, where it carries the size ("… Kapsule me PDRN 30ml"): the breadcrumb's
+    #    last step and the page's title, when they name this product; and a labelled size in the page's summary
+    full = [strip_html(x) for x in re.findall(r'class="breadcrumb_last"[^>]*>(.*?)</', body, re.S | re.I)]
+    full += [strip_html(x) for x in re.findall(r'"position":\s*\d+,\s*"name":\s*"([^"]+)"\s*\}\s*\]', html)[-1:]]
+    for f in full:
+        if want and len(want & set(re.findall(r"[a-z0-9]{3,}", fold(f)))) >= 0.8 * len(want):
+            found |= {size_of(m) for m in SIZE_RE.finditer(fold(f)) if m.group(2) not in ("l", "lt")}
+    for d in re.findall(r'<meta[^>]+property="og:description"[^>]+content="([^"]*)"', html, re.I)[:1]:
+        found |= {size_of(m) for m in label.finditer(fold(strip_html(d)))} if h1 else set()
+    return size_label(*found.pop()) if len(found) == 1 else None
 
 
 # ---------------------------------------------------------------- adapters
@@ -457,7 +528,11 @@ def run(domain, category, platform=None, max_pages=3000):
         platform = "custom" if custom else platform or detect(c)
         print(f"{domain}: platform={platform} delay={c.delay}s", flush=True)
         started = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        n = save(con, domain, (custom or ADAPTERS[platform])(c, max_pages))
+        known = dict(con.execute("SELECT url, size FROM page_sizes WHERE size IS NOT NULL AND url LIKE ?", (f"%{domain}%",)))
+        rows = (custom or ADAPTERS[platform])(c, max_pages)
+        rows = ({**r, "title": with_size(r["title"], [("size", [known[r.get("url")]])])} if r.get("title") and r.get("url") in known
+                else r for r in rows)
+        n = save(con, domain, rows)
         status, note = ("ok" if n else "no-products"), None
         if n and platform in ("woocommerce", "shopify"):
             # These feeds list the whole catalogue, so anything not seen in this complete run is gone

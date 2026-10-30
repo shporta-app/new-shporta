@@ -107,6 +107,7 @@ def server_nightly():
     """On the server: collect every shop it may, add what the PC sent, rebuild, restart the site, back up."""
     log("server nightly start")
     merge_inbox()  # yesterday's PC-only shops first, so they're in this build too
+    run(sys.executable, "sizes.py", check=False)  # sizes shops state on the product's page, not in its name
     run(sys.executable, "refresh.py", "--skip", *PC_ONLY, check=False)
     # shops a vetting pass approved since the last run (shops_new_vetted.json, verdict "ok"): their first collection
     run(sys.executable, "add_shops.py", check=False)
