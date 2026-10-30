@@ -1179,7 +1179,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/njoftim/ndalo":  # Gmail's own "unsubscribe" button (List-Unsubscribe-Post): stop every alert
             alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])
             return self._send(200, {"ok": True})
-        if path not in ("/api/lookup", "/api/alert", "/api/feedback", "/api/push/subscribe", "/api/push/unsubscribe"):
+        if path not in ("/api/lookup", "/api/alert", "/api/feedback", "/api/push/subscribe", "/api/push/unsubscribe", "/api/push/test"):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -1198,6 +1198,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/push/subscribe":  # notifications on: this device's push address + the products it follows
                 ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
                 code, msg = push.subscribe(data.get("subscription"), data.get("items"), ip, alert_item)
+                return self._send(code, {"message": msg} if code == 200 else {"error": msg})
+            if path == "/api/push/test":  # "Dërgo një njoftim provë" on /njoftime
+                code, msg = push.test(str(data.get("endpoint", ""))[:1000])
                 return self._send(code, {"message": msg} if code == 200 else {"error": msg})
             if path == "/api/push/unsubscribe":
                 code, msg = push.unsubscribe(str(data.get("endpoint", ""))[:1000])

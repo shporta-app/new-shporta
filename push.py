@@ -156,6 +156,33 @@ def unsubscribe(endpoint):
     return 200, "Njoftimet u çaktivizuan. Adresa e këtij shfletuesi u fshi."
 
 
+_tests = {}
+
+
+def test(endpoint):
+    """"Send a test notification": only to a device already subscribed, at most 3 an hour, so anyone can check that
+    notifications reach their phone without waiting for a price to drop."""
+    with con() as c:
+        r = c.execute("SELECT endpoint, p256dh, auth FROM push_subs WHERE endpoint = ?", (str(endpoint),)).fetchone()
+    if not r:
+        return 404, "Njoftimet nuk janë aktive në këtë pajisje. Aktivizoji përsëri."
+    with _lock:
+        now = time.time()
+        hits = [t for t in _tests.get(r["endpoint"], []) if now - t < 3600]
+        if len(hits) >= 3:
+            return 429, "Ke dërguar 3 njoftime provë këtë orë. Provo përsëri më vonë."
+        _tests[r["endpoint"]] = hits + [now]
+    status = send(dict(r), {"title": "shporta: njoftim provë",
+                            "body": "Njoftimet punojnë. Kur bie çmimi i një produkti që ndjek, të njoftojmë kështu.",
+                            "url": "/njoftime", "tag": "test"})
+    if status in (404, 410):
+        unsubscribe(r["endpoint"])
+        return 410, "Kjo pajisje nuk i pranon më njoftimet. Aktivizoji përsëri."
+    if not 200 <= status < 300:
+        return 502, "Shërbimi i njoftimeve nuk u përgjigj. Provo përsëri pas pak."
+    return 200, "U dërgua. Njoftimi duhet të shfaqet pas pak sekondash."
+
+
 # ------------------------------------------------------------------ sending
 
 def _hkdf(salt, ikm, info, length):
