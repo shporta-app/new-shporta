@@ -1341,94 +1341,122 @@ let scanStop = null;  // stops the camera when leaving the page
 
 async function pageScan() {
   document.title = "Skano një produkt | shporta";
+  const icoCode = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>`;
+  const icoPhoto = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>`;
   main.innerHTML = `<div class="wrap scan">
-    <div class="page-head"><h1>skano</h1>
-      <p>Drejtoje kamerën te barkodi i produktit, në dyqan apo në shtëpi: të tregojmë sa kushton në çdo dyqan online, dhe alternativa më të lira.</p></div>
-    <div class="scan-stage">
+    <div class="page-head"><h1>Skano një produkt</h1>
+      <p>Ke një produkt në dorë, në dyqan apo në shtëpi? Shiko sa kushton në çdo dyqan online.</p></div>
+    <div class="scan-ways">
+      <button type="button" class="scan-way" id="way-code">${icoCode}<span><b>Skano barkodin</b>
+        <small>Vijat me numra, zakonisht pas ose poshtë paketimit.</small></span></button>
+      <label class="scan-way">${icoPhoto}<span><b>Fotografo paketimin</b>
+        <small>Pjesa e përparme, ku duken qartë marka dhe emri.</small></span>
+        <input type="file" id="scan-file" accept="image/*" capture="environment" hidden></label>
+    </div>
+    <div class="scan-stage" id="scan-stage" hidden>
       <video id="scan-video" playsinline muted></video>
       <div class="scan-frame" aria-hidden="true"><i></i></div>
-      <button type="button" class="btn scan-start" id="scan-start">Hap kamerën</button>
       <p class="scan-status" id="scan-status" role="status"></p>
+      <button type="button" class="scan-close" id="scan-close" aria-label="Mbyll kamerën">✕</button>
     </div>
-    <div class="scan-alt">
-      <label class="btn btn-ghost scan-photo">Foto e etiketës<input type="file" id="scan-file" accept="image/*" capture="environment" hidden></label>
-      <form id="scan-code" class="scan-code"><label class="sr" for="scan-digits">Shkruaj numrin e barkodit</label>
-        <input id="scan-digits" inputmode="numeric" pattern="[0-9 ]{8,18}" placeholder="ose shkruaj numrin e barkodit">
-        <button class="btn btn-ghost" type="submit">Kërko</button></form>
-    </div>
+    <details class="scan-type"><summary>Barkodi nuk lexohet? Shkruaj numrin</summary>
+      <form id="scan-code" class="scan-code"><label class="sr" for="scan-digits">Numri i barkodit</label>
+        <input id="scan-digits" inputmode="numeric" autocomplete="off" pattern="[0-9 ]{8,18}" placeholder="p.sh. 3337875597388">
+        <button class="btn" type="submit">Kërko</button></form></details>
     <div id="scan-result" aria-live="polite"></div>
-    <p class="note">Kamera dhe fotoja përdoren vetëm në telefonin tënd: te ne vjen vetëm numri i barkodit ose fjalët e etiketës.
-      Origjinalitetin e një produkti nuk e vërteton dot asnjë foto; kur një dyqan e shet shumë më lirë se të tjerët, të paralajmërojmë.</p>
+    <p class="note">Kamera dhe fotoja përdoren vetëm në telefonin tënd: te ne vjen vetëm numri i barkodit ose fjalët e lexuara.
+      Kur barkodi nuk është te dyqanet tona, emrin e produktit e marrim nga Open Beauty Facts. Tregojmë një produkt vetëm kur jemi të sigurt që është ai.</p>
   </div>`;
-  const status = document.getElementById("scan-status"), result = document.getElementById("scan-result");
-  // what the person is waiting for comes onto the screen: the "reading…" line, then the results
+  const stage = document.getElementById("scan-stage"), status = document.getElementById("scan-status");
+  const result = document.getElementById("scan-result");
+  // what the person is waiting for comes onto the screen: the "reading…" line, then the answer
   const reveal = () => result.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "start" });
   const busy = (text) => { result.innerHTML = `<p class="loading scan-busy">${text}</p>`; reveal(); };
-  const notFound = (d) => `<div class="empty"><b>Nuk e gjetëm këtë produkt.</b>${d && d.valid === false ? "Ky numër nuk duket si barkod. Provo përsëri." :
-    "Pak dyqane e shkruajnë barkodin. Fotografo anën ku shkruhet emri i produktit, ose kërko me emër."}</div>`;
-  const render = (d, label) => {
-    if (d.items.length === 1) { go(`/produkt/${d.items[0].id}`); return; }
-    result.innerHTML = `<h2 class="sub">${esc(label(d))}</h2><div class="grid">${d.items.map(tile).join("")}</div>`;
-    reveal();
+  const say = (html) => { result.innerHTML = html; reveal(); };
+  const photoBtn = `<label class="btn">Fotografo paketimin<input type="file" accept="image/*" capture="environment" hidden data-photo></label>`;
+  // one product (or the same product in its sizes): straight to it, or the sizes to pick from. Never a guess.
+  const answer = (items, head, foot = "") => {
+    if (items.length === 1) return go(`/produkt/${items[0].id}`);
+    say(`<h2 class="sub">${head}</h2><p class="note">Zgjidh madhësinë që ke në dorë.</p>
+      <div class="grid">${items.map(tile).join("")}</div>${foot}`);
   };
-  const show = async (url, label) => {
-    busy("Duke kërkuar…");
-    const d = await api(url).catch(() => null);
-    if (!d) { result.innerHTML = `<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`; return reveal(); }
-    if (d.items.length) return render(d, label);
-    result.innerHTML = notFound(d);
-    reveal();
+  const unsure = (d) => say(`<div class="scan-unsure"><b>Nuk jemi të sigurt cili produkt është.</b>
+      <p>${d.words && d.words.length ? `Lexuam: <i>${esc(d.words.join(" "))}</i>. ` : ""}Fotografo emrin nga afër, me dritë, ose kërko vetë:</p>
+      <form class="scan-code" data-search><input name="q" value="${esc((d.words || []).join(" "))}" aria-label="Kërko produktin">
+        <button class="btn" type="submit">Kërko</button></form></div>`);
+
+  const byCode = async (code) => {
+    busy(`Barkodi ${esc(code)}: po kërkojmë…`);
+    const d = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
+    if (!d) return say(`<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`);
+    if (d.valid === false) return say(`<div class="empty"><b>Ky numër nuk është barkod i plotë.</b>Kontrollo shifrat dhe provo përsëri.</div>`);
+    if (d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`,
+      d.source ? `<p class="note">Emri i produktit sipas barkodit: ${esc(d.name)} (Open Beauty Facts).${d.size_ok ? "" : " Madhësinë kontrolloje vetë."}</p>` : "");
+    say(`<div class="scan-unsure"><b>Ky barkod nuk është te dyqanet që krahasojmë.</b>
+      <p>${d.name ? `Sipas barkodit është <i>${esc(d.name)}</i>, por nuk e gjejmë saktësisht te dyqanet online. ` : "Pak dyqane e shkruajnë barkodin. "}Provo një foto të pjesës së përparme.</p>
+      ${photoBtn}</div>`);
   };
-  const found = (code) => { stop(); navigator.vibrate?.(60); status.textContent = `Barkodi ${code}`; show(`/api/barcode?code=${encodeURIComponent(code)}`, () => `Barkodi ${code}`); };
-  let stream = null, timer = null, zx = null;
+
+  // the camera: a code counts only when it is read the same twice in a row with a correct check digit
+  let stream = null, timer = null, zx = null, last = null;
+  const checkDigit = (c) => { const d = c.split("").map(Number), body = d.slice(0, -1).reverse();
+    return (10 - body.reduce((t, x, i) => t + x * (i % 2 ? 1 : 3), 0) % 10) % 10 === d[d.length - 1]; };
+  const seen = (code) => {
+    if (!/^\d{8,14}$/.test(code) || !checkDigit(code)) return;
+    if (code !== last) { last = code; return; }
+    stop(); navigator.vibrate?.(60); byCode(code);
+  };
   const stop = () => {
-    clearInterval(timer); timer = null;
+    clearInterval(timer); timer = null; last = null;
     if (zx) { zx.reset(); zx = null; }
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-    document.querySelector(".scan-stage")?.classList.remove("live");
+    stage.classList.remove("live"); stage.hidden = true;
   };
   scanStop = stop;
-  document.getElementById("scan-start").onclick = async () => {
-    const video = document.getElementById("scan-video");
+  const video = { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] };
+  document.getElementById("way-code").onclick = async () => {
+    result.innerHTML = "";
+    stage.hidden = false;
     status.textContent = "Duke hapur kamerën…";
+    stage.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "center" });
+    const v = document.getElementById("scan-video");
     try {
       if ("BarcodeDetector" in window) {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-        video.srcObject = stream;
-        await video.play();
+        stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        v.srcObject = stream;
+        await v.play();
         const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-        timer = setInterval(async () => {
-          const codes = await det.detect(video).catch(() => []);
-          if (codes.length) found(codes[0].rawValue);
-        }, 250);
+        timer = setInterval(async () => { const c = await det.detect(v).catch(() => []); if (c.length) seen(c[0].rawValue); }, 200);
       } else {
         await loadScript(ZXING);
-        zx = new ZXing.BrowserMultiFormatReader();
-        zx.decodeFromConstraints({ video: { facingMode: "environment" } }, video, (r) => { if (r) found(r.getText()); });
+        const hints = new Map([[ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E]], [ZXing.DecodeHintType.TRY_HARDER, true]]);
+        zx = new ZXing.BrowserMultiFormatReader(hints, 150);
+        zx.decodeFromConstraints({ video }, v, (r) => { if (r) seen(r.getText()); });
       }
-      document.querySelector(".scan-stage").classList.add("live");
-      status.textContent = "Mbaje barkodin brenda kornizës.";
-    } catch (e) {
-      status.textContent = "Kamera nuk u hap. Lejo kamerën te shfletuesi, ose përdor foton e etiketës.";
+      stage.classList.add("live");
+      status.textContent = "Mbaje barkodin brenda kornizës, 10–15 cm larg.";
+    } catch {
+      stop();
+      say(`<div class="scan-unsure"><b>Kamera nuk u hap.</b><p>Lejo kamerën te cilësimet e shfletuesit, ose bëj një foto.</p>${photoBtn}</div>`);
     }
   };
+  document.getElementById("scan-close").onclick = stop;
   document.getElementById("scan-code").onsubmit = (e) => {
     e.preventDefault();
     const code = document.getElementById("scan-digits").value.replace(/\D/g, "");
-    if (code) found(code);
+    if (code) { stop(); byCode(code); }
   };
-  document.getElementById("scan-file").onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    e.target.value = "";  // the same photo can be chosen again
+
+  // a photo: its barcode first (exact), else the words on the package
+  const photo = async (file) => {
     stop();
     busy("Duke lexuar foton në telefon… (herën e parë zgjat pak)");
     try {
-      // 1. a barcode in the photo: exact. Chrome on Android reads it itself, other phones through ZXing
       let code = null;
       if ("BarcodeDetector" in window) {
-        const codes = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(await createImageBitmap(file)).catch(() => []);
-        code = codes[0]?.rawValue || null;
+        const c = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(await createImageBitmap(file)).catch(() => []);
+        code = c[0]?.rawValue || null;
       } else {
         await loadScript(ZXING).catch(() => {});
         if (window.ZXing) {
@@ -1438,27 +1466,28 @@ async function pageScan() {
           code = r ? r.getText() : null;
         }
       }
-      let byCode = null;
-      if (code) {
-        status.textContent = `Barkodi ${code}`;
-        byCode = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
-        if (byCode && byCode.items.length) return render(byCode, () => `Barkodi ${code}`);
-        busy(`Barkodi ${code} nuk është te dyqanet online. Po lexojmë emrin në foto…`);
+      if (code && checkDigit(code)) {
+        const d = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
+        if (d && d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`);
+        busy(`Barkodi ${esc(code)} nuk është te dyqanet tona. Po lexojmë emrin në foto…`);
       }
-      // 2. the words on the package: the brand and the product's name
       await loadScript(TESSERACT);
       const { data } = await Tesseract.recognize(file, "eng");
       const text = data.text.replace(/\s+/g, " ").trim();
-      const d = text ? await api(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`).catch(() => null) : null;
-      if (d && d.items.length) return render(d, (x) => x.words && x.words.length ? `Lexuam: ${x.words.join(" ")}` : "Rezultatet");
-      result.innerHTML = code ? notFound(byCode)
-        : `<div class="empty"><b>Nuk e gjetëm nga fotoja.</b>Fotografo emrin e produktit ose barkodin nga afër, me dritë.</div>`;
-      reveal();
+      if (!text) return say(`<div class="scan-unsure"><b>Nuk lexuam dot asnjë fjalë.</b><p>Fotografo emrin e produktit nga afër, me dritë.</p>${photoBtn}</div>`);
+      const d = await api(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`).catch(() => null);
+      if (d && d.sure && d.items.length) return answer(d.items, `Lexuam: ${esc(d.words.join(" "))}`);
+      unsure(d || {});
     } catch {
-      result.innerHTML = `<div class="empty"><b>Nuk e lexuam dot foton.</b>Provo përsëri ose kërko me emër.</div>`;
-      reveal();
+      say(`<div class="scan-unsure"><b>Nuk e lexuam dot foton.</b><p>Provo përsëri ose kërko me emër.</p>${photoBtn}</div>`);
     }
   };
+  main.querySelector(".scan").addEventListener("change", (e) => {
+    if (!e.target.matches("#scan-file, [data-photo]")) return;
+    const f = e.target.files[0];
+    e.target.value = "";  // the same photo can be chosen again
+    if (f) photo(f);
+  });
 }
 
 /* ---------- router ---------- */

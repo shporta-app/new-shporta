@@ -943,3 +943,29 @@ table.offers:not(.all) tr.extra { display: none; }
 #scan-result { scroll-margin-top: 140px; }
 @media (min-width: 761px) { #scan-result { scroll-margin-top: 90px; } }
 .scan-busy { padding: 24px 0; }
+
+/* ---------- Skano: two clear ways in, the camera only when asked for ---------- */
+.scan-ways { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 640px; margin: 8px 0 14px; }
+.scan-way { display: flex; gap: 14px; align-items: flex-start; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-height: 96px; }
+.scan-way svg { flex: none; width: 44px; height: 44px; padding: 9px; border-radius: 12px; background: var(--lime); color: #14121F; }
+.scan-way b { display: block; font: 600 17px/1.25 var(--display); margin-bottom: 4px; }
+.scan-way small { display: block; color: var(--muted); font-size: 14px; line-height: 1.4; }
+@media (hover: hover) and (pointer: fine) { .scan-way:hover { border-color: var(--ink); } }
+@media (prefers-reduced-motion: no-preference) { .scan-way { transition: transform 140ms var(--ease-out), border-color 150ms ease; } .scan-way:active { transform: scale(.98); } }
+@media (max-width: 560px) { .scan-ways { grid-template-columns: 1fr; } }
+.scan-stage[hidden] { display: none; }
+.scan-stage { max-width: 640px; }
+.scan-close { position: absolute; top: 10px; right: 10px; z-index: 3; width: 40px; height: 40px; border-radius: 50%; border: 0;
+  background: rgba(20, 18, 31, .7); color: #fff; font-size: 16px; cursor: pointer; }
+.scan-type { max-width: 640px; margin: 4px 0 18px; }
+.scan-type summary { cursor: pointer; color: var(--ink); font-weight: 600; padding: 10px 0; text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ink) 35%, transparent); text-underline-offset: 3px; }
+.scan-type .scan-code { margin-top: 8px; }
+.scan-unsure { max-width: 640px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
+.scan-unsure > b { display: block; font: 600 18px/1.3 var(--display); margin-bottom: 6px; }
+.scan-unsure p { margin: 0 0 14px; color: var(--muted); }
+.scan-unsure p i { color: var(--ink); font-style: normal; font-weight: 600; }
+.scan-unsure .scan-code { display: flex; gap: 8px; }
+.scan-unsure .scan-code input { flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.scan-unsure label.btn { cursor: pointer; }

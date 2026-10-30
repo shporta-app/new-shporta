@@ -592,8 +592,92 @@ def suggest(q):
     return {"total": total, "items": items}
 
 
+# words on a label that describe rather than name a product ("for dry to very dry skin")
+LABEL_WORDS = {"for", "with", "dry", "oily", "normal", "all", "types", "very", "sensitive", "combination", "skin", "use",
+               "daily", "day", "and", "the", "new"}
+_obf, _obf_lock = {}, threading.Lock()
+
+
+def obf_product(gtin):
+    """A barcode's brand, name and size from Open Beauty Facts (open data, ODbL), for products whose barcode no shop
+    of ours publishes. Remembered for a day, misses too. Only the barcode is sent."""
+    import time
+    import urllib.request
+    code = gtin[1:] if len(gtin) == 14 and gtin[0] == "0" else gtin
+    with _obf_lock:
+        hit = _obf.get(code)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
+    out = None
+    try:
+        req = urllib.request.Request(
+            f"https://world.openbeautyfacts.org/api/v2/product/{code}.json?fields=brands,product_name,product_name_en,product_name_fr,quantity",
+            headers={"User-Agent": "shporta.app/1.0 (+https://shporta.app)"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        if d.get("status") == 1:
+            out = d.get("product") or None
+    except Exception:
+        return None  # not remembered: the next scan asks again
+    with _obf_lock:
+        if len(_obf) > 5000:
+            _obf.clear()
+        _obf[code] = (time.time(), out)
+    return out
+
+
+def name_match(brand, name, quantity=""):
+    """A product's brand and name (from its barcode's record, or read off the package) -> our products whose names
+    have every one of those words, in the same size when the size is known. Only a specific name counts: the brand
+    plus at least two words of the product's own name (or all of them), never a looser search."""
+    from match import SIZE_RE, size_of
+    vocab, brands = vocabulary(), brand_words()
+    bwords = [w for w in re.findall(r"[a-z0-9]+", fold(brand or "")) if w in vocab and w in brands]
+    if not bwords:
+        return None
+    known, unknown = [], 0
+    for w in re.findall(r"[a-z0-9]+", fold(name or "")):
+        if w in bwords or w in LABEL_WORDS or (len(w) < 3 and not w.isdigit()) or SIZE_RE.fullmatch(w):
+            continue
+        if w in vocab and w not in known:
+            known.append(w)
+        elif w not in vocab:
+            unknown += 1
+    if not (len(known) >= 2 or (known and not unknown)):
+        return None
+    items = closest(bwords + known, f"{brand} {name}")
+    if not items:
+        return None
+    m = SIZE_RE.search(fold(quantity or ""))
+    if m:
+        want = size_of(m)
+        sized = [it for it in items if (n := SIZE_RE.search(fold(it.get("size") or ""))) and size_of(n) == want]
+        if sized:
+            return {"items": sized, "size_ok": True, "words": bwords + known}
+    return {"items": items, "size_ok": False, "words": bwords + known}
+
+
+def closest(words, text="", limit=6):
+    """The products named exactly by these words: every word in the name, and nothing in the name that isn't on the
+    package too (text: everything read on it), apart from numbers ("CeraVe Moisturising Cream" in its sizes, never
+    "CeraVe Intensive Moisturizing Cream", a refill or a set). Empty when no product is that close: then we don't
+    know which one it is, and say so."""
+    want = set(canonical_key(parse(" ".join(words))[0]).split())
+    seen = want | set(canonical_key(parse(text)[0]).split()) | set(re.findall(r"[a-z0-9%]+", fold(text)))
+    total, items = search_items(words, 60)
+    if not total:
+        return []
+    near = []
+    for it in items:
+        have = set(canonical_key(parse(it["title"])[0]).split())
+        if want <= have and all(w in seen or re.fullmatch(r"[\d.,%]+", w) for w in have - want):
+            near.append(it)
+    return near[:limit] if 0 < len(near) <= limit * 2 else []
+
+
 def barcode(code):
-    """"Skano": a barcode read by the phone's camera -> the products that carry it, most shops first."""
+    """"Skano": a barcode read by the phone's camera -> the products that carry it, most shops first. When no shop of
+    ours publishes this barcode, its name and size from Open Beauty Facts, matched exactly by name (name_match)."""
     from match import valid_gtin
     g = valid_gtin(code)
     if not g:
@@ -605,7 +689,19 @@ def barcode(code):
     items = item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(ids))})
                           ORDER BY shops DESC, in_stock_shops DESC""",
                       ids) if ids else []
-    return {"code": g.lstrip("0"), "valid": True, "items": items}
+    out = {"code": g.lstrip("0"), "valid": True, "items": items, "how": "barcode"}
+    if items:
+        return out
+    rec = obf_product(g)
+    if rec:
+        brand = (rec.get("brands") or "").split(",")[0].strip()
+        out["name"] = " ".join(x for x in (brand, rec.get("product_name_en") or rec.get("product_name"), rec.get("quantity")) if x)
+        for name in dict.fromkeys(x for x in (rec.get("product_name_en"), rec.get("product_name"), rec.get("product_name_fr")) if x):
+            m = name_match(brand, name, rec.get("quantity") or "")
+            if m:
+                out.update(items=m["items"], how="name", size_ok=m["size_ok"], source="Open Beauty Facts")
+                break
+    return out
 
 
 def identify(text):
@@ -613,8 +709,7 @@ def identify(text):
     names use, rarest first (a brand or line name says more than "cream"), and search with fewer words until
     something is found. OCR misreads letters, so each word also gets the typo correction."""
     from match import DESCRIPTIONS, NOISE, STOP
-    vocab, skip = vocabulary(), DESCRIPTIONS | NOISE | STOP | {"for", "with", "dry", "oily", "normal", "all", "types", "very",
-                                                                  "sensitive", "combination", "skin", "use", "daily", "day"}
+    vocab, skip = vocabulary(), DESCRIPTIONS | NOISE | STOP | LABEL_WORDS
     words = []
     for w in re.findall(r"[a-z0-9]{3,}", fold(text)):
         if w in skip:
@@ -635,10 +730,18 @@ def identify(text):
             chosen, total = chosen + [w], t
         if len(chosen) == 5 or total == 1:
             break
+    # sure: the brand and two words of the product's name, and few enough products that it is one of them
+    # (usually the same product in its sizes). Anything less is a guess, and the page says so instead of listing it.
+    brand = next((w for w in chosen if w in brands), None)
     if chosen:
-        total, items = search_items(chosen, 12)
-        return {"words": chosen, "total": total, "items": items}
-    return {"words": words[:4], "total": 0, "items": []}
+        total, _ = search_items(chosen, 1)
+        items = closest(chosen, text) if brand and len([w for w in chosen if w not in brands]) >= 2 else []
+        from match import SIZE_RE, size_of
+        sizes = {size_of(m) for m in SIZE_RE.finditer(fold(text))}
+        sized = [it for it in items if (n := SIZE_RE.search(fold(it.get("size") or ""))) and size_of(n) in sizes]
+        items = sized or items  # the size printed on the package picks the one in the hand
+        return {"words": chosen, "total": total, "items": items, "sure": bool(items), "brand": brand}
+    return {"words": words[:4], "total": 0, "items": [], "sure": False, "brand": None}
 
 
 def basket(ids):
