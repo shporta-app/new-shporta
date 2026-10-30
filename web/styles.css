@@ -590,3 +590,21 @@ p.hero-stats b { display: inline; font: 600 15px/1 var(--body); }
   .product .ruler { display: none; }
 }
 .hero-in > * { min-width: 0; }  /* the scrolling row of categories never widens the page */
+
+/* category: the order as a row of buttons */
+.sorts { border: 0; padding: 0; margin: 0; display: flex; gap: 8px; flex-wrap: wrap; flex-basis: 100%; }
+.sorts label { cursor: pointer; }
+.sorts input { position: absolute; opacity: 0; pointer-events: none; }
+.sorts span { display: inline-block; border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 999px;
+  padding: 8px 14px; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.sorts input:checked + span { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.sorts input:focus-visible + span { outline: 2px solid var(--violet); outline-offset: 2px; }
+.start { padding-top: 28px; }
+@media (max-width: 560px) {
+  .sorts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px 2px; }
+  .sorts::-webkit-scrollbar { display: none; }
+  /* price table on a phone: the shop and its price stand out, the shop's own title is a quiet line to check against */
+  table.offers td:nth-child(1) .t { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  table.offers td:nth-child(1) b { font-size: 16px; }
+  table.offers .p .num { font: 600 19px/1.2 var(--display); }
+}

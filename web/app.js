@@ -374,6 +374,14 @@ const searchForm = (id, value = "") => `<form class="hero-search" role="search" 
 
 /* ---------- pages ---------- */
 
+// an empty page shows where to start: the products with the biggest gap between shops today
+async function startHere() {
+  const d = homeCache || (homeCache = await api("/api/home").catch(() => null));
+  return d && d.deals.length ? `<section class="section start"><h2>fillo nga këto</h2>
+    <p class="lead">Produktet me diferencën më të madhe mes dyqaneve sot.</p>
+    <div class="grid">${d.deals.slice(0, 6).map(tile).join("")}</div></section>` : "";
+}
+
 let homeCache;
 async function pageHome() {
   const d = homeCache || (homeCache = await api("/api/home"));
@@ -482,9 +490,10 @@ async function pageCategory(cat, params) {
     <div class="page-head"><div class="crumbs"><a href="/kategorite" data-link>Kategoritë</a></div>
       <h1>${esc(d.label)}</h1><p>${plural(d.total, "produkt", "produkte")}</p></div>
     <form class="filters" id="filters">
-      <label>Rendit <select name="sort">
-        ${opt("compared", "Në më shumë dyqane", q.get("sort") || "compared")}${opt("gap", "Diferenca më e madhe", q.get("sort"))}
-        ${opt("cheap", "Më të lirat", q.get("sort"))}${opt("dear", "Më të shtrenjtat", q.get("sort"))}</select></label>
+      <fieldset class="sorts"><legend class="sr">Rendit</legend>
+        ${[["compared", "Në më shumë dyqane"], ["gap", "Kursimi më i madh"], ["cheap", "Më të lirat"], ["dear", "Më të shtrenjtat"]].map(([v, label]) =>
+          `<label><input type="radio" name="sort" value="${v}" ${(q.get("sort") || "compared") === v ? "checked" : ""}><span>${label}</span></label>`).join("")}
+      </fieldset>
       <label>Dyqani <select name="shop"><option value="">Të gjitha</option>${d.shops.map((s) => opt(s, shopName(s), q.get("shop"))).join("")}</select></label>
     </form>
     ${d.items.length ? `<div class="grid">${d.items.map(tile).join("")}</div>`
@@ -645,7 +654,7 @@ async function pageList() {
       : `<span class="hist up">U rrit ${lek(n.min_price - w.price, w.currency)} që nga ${day(w.saved)} (ishte ${lek(w.price, w.currency)}).</span>`;
     return `<li class="${dropped(w) ? "drop" : ""}">
       <a href="/produkt/${esc(w.id)}" data-link>${img(w.image, w.title)}
-        <span><span class="name">${esc(w.title)}${w.size ? ` <small>${esc(w.size)}</small>` : ""}</span>
+        <span><span class="name">${esc(nice(w.title, w.size))}${w.size ? ` <small>${esc(w.size)}</small>` : ""}</span>
         <span class="num">${n ? `${n.shops > 1 ? "nga " : ""}${lek(n.min_price, n.currency)}` : ""}</span>${change}</span></a>
       <button type="button" class="btn btn-ghost" data-unwatch="${esc(w.id)}">Hiqe</button></li>`;
   };
@@ -654,9 +663,8 @@ async function pageList() {
     <div class="page-head"><h1>produktet që ndjek</h1>
       <p>${l.length ? `${plural(l.length, "produkt", "produkte")}${drops.length ? `, ${drops.length} me çmim më të ulët se kur e ruajte` : ""}.` : ""}
         Lista ruhet vetëm në këtë shfletues: nuk ka llogari dhe ne nuk e shohim. Krahasojmë çmimin më të lirë në stok sot me atë të ditës kur e ruajte.</p></div>
-    ${savingsBox()}
-    ${l.length ? `<ul class="watchlist">${[...drops, ...l.filter((w) => !dropped(w))].map(row).join("")}</ul>`
-      : `<div class="empty"><b>Nuk ndjek asnjë produkt ende.</b>Hap një produkt dhe shtyp "Ndiq çmimin". Kur rihap shportën, këtu shikon nëse çmimi ra.</div>`}
+    ${l.length ? `<ul class="watchlist">${[...drops, ...l.filter((w) => !dropped(w))].map(row).join("")}</ul>${savingsBox()}`
+      : `<div class="empty"><b>Nuk ndjek asnjë produkt ende.</b>Hap një produkt dhe shtyp "Ndiq çmimin". Kur i bie çmimi, të njoftojmë.</div>${await startHere()}`}
   </div>`;
   main.querySelectorAll("[data-unwatch]").forEach((b) => (b.onclick = () => {
     watchSave(watchList().filter((w) => w.id !== b.dataset.unwatch));
@@ -1025,7 +1033,7 @@ async function pageBasket() {
   if (!l.length) {
     main.innerHTML = `<div class="wrap"><div class="page-head"><h1>shporta ime</h1>
       <p>Shto disa produkte dhe shporta llogarit ku t'i blesh që të paguash më pak: të gjitha te një dyqan, të ndara në dy dyqane, ose secilin te më i liri.</p></div>
-      <div class="empty"><b>Shporta është bosh.</b>Hap një produkt dhe shtyp "Shto në shportë".</div></div>`;
+      <div class="empty"><b>Shporta është bosh.</b>Hap një produkt dhe shtyp "Shto në shportë".</div>${await startHere()}</div>`;
     return;
   }
   const d = await api(`/api/basket?ids=${l.map((b) => encodeURIComponent(b.id)).join(",")}`);
@@ -1035,7 +1043,7 @@ async function pageBasket() {
   const planBox = (p, title, note, cls = "") => !p ? "" : `<div class="plan ${cls}">
       <div class="plan-head"><h3>${title}</h3><b class="num">${lek(p.total)}</b></div>
       <p class="note">${note}${p.missing.length ? ` Mungon: ${p.missing.map((m) => esc(m.title)).join(", ")}.` : ""}</p>
-      <ul>${p.lines.filter((x) => x.o).map((x) => `<li><span>${esc(x.it.title)}${x.it.qty > 1 ? ` × ${x.it.qty}` : ""}</span>
+      <ul>${p.lines.filter((x) => x.o).map((x) => `<li><span>${esc(nice(x.it.title, x.it.size))}${x.it.qty > 1 ? ` × ${x.it.qty}` : ""}</span>
         <span class="plan-shop">${esc(shopName(x.o.shop))}</span><span class="num">${lek(x.o.price * x.it.qty)}</span></li>`).join("")}</ul>
     </div>`;
   const best = plans && plans.cheapest;
