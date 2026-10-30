@@ -31,6 +31,24 @@ function priceNote(o) {
   if (o.seen && daysAgo(o.seen) >= 1) out.push(`<span class="hist">çmimi i parë më ${day(o.seen)}</span>`);
   return out.length ? `<br>${out.join("<br>")}` : "";
 }
+// Shops write titles their own way ("CeraVe – Moisturizing Cream - Sasia: 340gr", "Serum 30 ml - 30 ml", all in capitals).
+// For reading we drop the size labels and a size repeated at the end, and soften all-capital titles. Display only:
+// the exact title each shop uses stays on its row of the price table.
+const ACRONYM = /^(SPF|EDP|EDT|EDC|UV|UVA|UVB|AHA|BHA|PHA|NYX|CBD|DHA|HA|MAC|NARS|YSL|DKNY|CK|BB|CC|XL|XXL|XS|USB|LED|TV|HD|PRO|II|III)$/;
+function nice(t, size) {
+  let s = String(t || "").replace(/\s*[-–|,/]?\s*\b(sasia|v[eë]llimi|format|madh[eë]sia|pesha|pesh[eë]|size)\s*:\s*/gi, " - ")
+    .replace(/\s+\|\s+/g, " ").replace(/\s+/g, " ").trim();
+  const n = String(size || "").match(/^\d+(?:[.,]\d+)?/);
+  if (n) {
+    const end = new RegExp(`\\s*[-–*,/]?\\s*${n[0].replace(/[.,]/, "[.,]")}\\s*(ml|g|gr|l|kg|cl|cop[eë]|kapsula|caps|tableta|tab)?\\.?\\s*$`, "i");
+    for (let i = 0; i < 2 && end.test(s) && s.replace(end, "").length > 8; i++) s = s.replace(end, "");
+  }
+  s = s.replace(/\s*[-–]\s*$/, "").replace(/\s[-–]\s[-–]\s/g, " – ");
+  const letters = s.replace(/[^A-Za-zÀ-ž]/g, "");
+  if (letters.length > 10 && letters.replace(/[^A-ZÀ-Þ]/g, "").length / letters.length > 0.7)
+    s = s.split(" ").map((w) => ACRONYM.test(w) || /\d/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
+  return s;
+}
 const shopName = (d) => String(d || "").replace(/^www\./, "");
 const plural = (n, one, many) => `${n.toLocaleString("en").replace(/,/g, " ")} ${n === 1 ? one : many}`;
 const img = (src, alt = "") =>
@@ -282,7 +300,7 @@ function ruler(item, { heading = "h3", animate = false, linkHead = true, showHea
            aria-label="${esc(shopName(o.shop))}: ${lek(o.price, o.currency)}${o.in_stock ? "" : ", s'ka gjendje"}">${lek(o.price, o.currency)}</a></span>
     </li>`;
   }).join("");
-  const head = `${img(item.image, item.title)}<div><${heading}>${esc(item.title)}</${heading}>
+  const head = `${img(item.image, item.title)}<div><${heading}>${esc(nice(item.title, item.size))}${item.size ? ` <small>${esc(item.size)}</small>` : ""}</${heading}>
       <small>${plural(offers.length, "dyqan", "dyqane")}${item.save_pct ? `, diferencë deri ${item.save_pct}%` : ""}</small></div>`;
   return `<div class="ruler${animate ? " animate" : ""}">
     ${!showHead ? "" : linkHead ? `<a class="ruler-head" href="/produkt/${esc(item.id)}" data-link>${head}</a>` : `<div class="ruler-head">${head}</div>`}
@@ -294,9 +312,9 @@ function tile(it) {
   const range = it.in_stock_shops > 1 && it.save_pct > 0 && it.max_price > it.min_price  // sold out everywhere saves nothing
     ? `<small>kursen deri ${lek(it.max_price - it.min_price, it.currency)}</small>` : "";
   return `<a class="tile" href="/produkt/${esc(it.id)}" data-link>
-    <span class="pic">${img(it.image, it.title)}</span>
+    <span class="pic">${img(it.image, it.title)}${range && it.save_pct >= 5 ? `<span class="off">−${it.save_pct}%</span>` : ""}</span>
     ${it.shops > 1 ? `<span class="chip">${plural(it.shops, "dyqan", "dyqane")}</span>` : ""}
-    <span class="name">${esc(it.title)}</span>${it.size ? `<span class="size">${esc(it.size)}</span>` : ""}
+    <span class="name">${esc(nice(it.title, it.size))}</span>${it.size ? `<span class="size">${esc(it.size)}</span>` : ""}
     <span class="meta"><span class="num">${it.shops > 1 ? "nga " : ""}${lek(it.min_price, it.currency)}</span>${range}</span>
   </a>`;
 }
@@ -304,7 +322,7 @@ function tile(it) {
 function deal(it) {
   return `<a class="deal" href="/produkt/${esc(it.id)}" data-link>
     ${img(it.image, it.title)}
-    <span><span class="name">${esc(it.title)}${it.size ? ` <small>${esc(it.size)}</small>` : ""}</span>
+    <span><span class="name">${esc(nice(it.title, it.size))}${it.size ? ` <small>${esc(it.size)}</small>` : ""}</span>
       <span class="range">${lek(it.min_price)} deri ${lek(it.max_price)} në ${plural(it.in_stock_shops, "dyqan", "dyqane")}</span></span>
     <span class="save">−${it.save_pct}%</span>
   </a>`;
@@ -320,13 +338,13 @@ function dupePair(r, { showOrig = true } = {}) {
   const size = (x) => (x ? ` <small>${esc(x)}</small>` : "");
   const orig = showOrig ? `<a class="dp-side" href="/produkt/${esc(r.orig_id)}" data-link>
       <span class="dp-pic">${img(r.orig_image, r.orig_title)}</span>
-      <span><small>Origjinali</small><span class="dp-name">${esc(r.orig_title)}</span>
+      <span><small>Origjinali</small><span class="dp-name">${esc(nice(r.orig_title, r.orig_size))}</span>
         <span class="num">${lek(r.orig_price)}${size(r.orig_size)}</span></span></a>` : "";
   return `<div class="dp${showOrig ? "" : " dp-single"}">
     ${orig}
     <a class="dp-side dp-dupe" href="/produkt/${esc(r.dupe_id)}" data-link>
       <span class="dp-pic">${img(r.dupe_image, r.dupe_title)}</span>
-      <span><small>Dupe</small><span class="dp-name">${esc(r.dupe_title)}</span>
+      <span><small>Dupe</small><span class="dp-name">${esc(nice(r.dupe_title, r.dupe_size))}</span>
         <span class="num">${lek(r.dupe_price)}${size(r.dupe_size)}</span></span></a>
     <div class="dp-why"><span class="save">−${r.save_pct}%${r.orig_size && r.dupe_size && r.orig_size !== r.dupe_size ? " për ml" : ""}</span>
       <span class="chip">${esc(r.reason)}</span><small>${DUPE_WHY[r.kind] || ""}</small></div>
@@ -350,7 +368,7 @@ function pager(data, base) {
 
 const searchForm = (id, value = "") => `<form class="hero-search" role="search" data-search>
     <label class="sr" for="${id}">Kërko produkt</label>
-    <input id="${id}" name="q" type="search" value="${esc(value)}" placeholder="p.sh. cerave, 345 relief cream, atlete nike">
+    <input id="${id}" name="q" type="search" value="${esc(value)}" placeholder="Kërko produkt ose markë" enterkeyhint="search">
     <button class="btn" type="submit">Kërko</button>
   </form>`;
 
@@ -366,14 +384,12 @@ async function pageHome() {
   <section class="hero"><div class="wrap hero-in">
     <div>
       <h1>i njëjti produkt, çmime të ndryshme</h1>
-      <p>Shiko sa kushton i njëjti produkt në çdo dyqan online në Shqipëri që e shet, para se ta blesh: ${esc(d.categories.filter((c) => c.count >= 100)
-        .sort((a, b) => b.count - a.count).slice(0, 5).map((c) => c.label.toLowerCase()).join(", "))}.</p>
+      <p>Shiko ku kushton më pak, para se ta blesh. Krahasojmë ${s.shops} dyqane online në Shqipëri.</p>
       ${searchForm("q-hero")}
-      <div class="hero-stats">
-        <span><b class="num">${s.offers.toLocaleString("en").replace(/,/g, " ")}</b>çmime</span>
-        <span><b class="num">${s.shops}</b>dyqane online</span>
-        <span><b class="num">${s.compared.toLocaleString("en").replace(/,/g, " ")}</b>produkte në 2+ dyqane</span>
-      </div>
+      <nav class="quick" aria-label="Kategoritë">${d.categories.filter((c) => c.count >= 100).sort((a, b) => b.count - a.count)
+        .map((c) => `<a href="/kategori/${c.id}" data-link>${esc(c.label)}</a>`).join("")}</nav>
+      <p class="hero-stats"><b class="num">${s.compared.toLocaleString("en").replace(/,/g, " ")}</b> produkte të krahasuara,
+        <b class="num">${s.offers.toLocaleString("en").replace(/,/g, " ")}</b> çmime, të përditësuara çdo ditë.</p>
     </div>
     <div id="featured">${d.featured.length ? ruler(d.featured[fi], { animate: true }) : ""}
       ${d.featured.length > 1 ? `<div class="ruler-foot"><span>Të dhëna reale nga dyqanet</span><button type="button" id="next">Një produkt tjetër</button></div>` : ""}
@@ -516,7 +532,7 @@ async function pageItem(id) {
     <div class="product">
       <div class="pic">${img(it.image, it.title)}</div>
       <div>
-        <h1>${esc(it.title)}</h1>
+        <h1>${esc(nice(it.title, it.size))}</h1>
         ${it.used ? `<p class="size-warn">Artikull i përdorur (second-hand / vintage). Nuk e krahasojmë me produkte të reja.</p>` : ""}
         ${it.size ? `<p class="size-line">Krahasojmë vetëm madhësinë <b>${esc(it.size)}</b>. Çdo dyqan më poshtë e shkruan këtë madhësi te produkti.</p>` : ""}
         <div class="summary">
@@ -525,9 +541,10 @@ async function pageItem(id) {
           ${live.length > 1 && hi > lo ? `<div>Më i shtrenjti<b>${lek(hi, it.currency)}</b></div><div>Kursen deri<b>${lek(hi - lo, it.currency)}</b></div>` : ""}
           <div>${multiShop ? "Dyqane" : "Variante"}<b>${it.offers.length}</b></div>
         </div>
+        ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
+        <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
+          <tbody>${rows}</tbody></table>
         ${story}
-        ${multiShop || (it.history || []).length > 1 ? (() => { const v = priceVerdict(it.history || [], lo);
-          return `<div class="verdict ${v.kind}"><p>${v.text}</p>${priceChart(it.history || [], it.currency)}</div>`; })() : ""}
         <p class="watch"><button type="button" class="btn" id="basket-add" aria-pressed="${inBasket(it.id)}"></button>
           <button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
           <small>Ruhet vetëm në këtë shfletues. Kur rihap shportën, të tregojmë nëse çmimi ra.</small></p>
@@ -537,9 +554,8 @@ async function pageItem(id) {
           <button class="btn" type="submit">Më njofto</button></span>
           <small id="alert-msg" role="status">Të shkruajmë vetëm kur bie çmimi. Çdo email ka një link për t’i ndaluar.</small>
         </form>` : ""}
-        ${multiShop ? ruler(it, { showHead: false, animate: true, from: "produkt" }) : ""}
-        <table class="offers"><thead><tr><th>Dyqani</th><th style="text-align:right">Çmimi</th><th>${multiShop ? "Sa më shumë" : "Gjendja"}</th><th></th></tr></thead>
-          <tbody>${rows}</tbody></table>
+        ${multiShop || (it.history || []).length > 1 ? (() => { const v = priceVerdict(it.history || [], lo);
+          return `<div class="verdict ${v.kind}"><p>${v.text}</p>${priceChart(it.history || [], it.currency)}</div>`; })() : ""}
         ${multiShop && it.size_note === 2 ? `<p class="size-warn">Asnjë nga këto dyqane nuk e shkruan madhësinë te produkti.
           I krahasuam sepse emri është i njëjtë dhe çmimet janë brenda 25% të njëri-tjetrit. Kontrollo madhësinë te dyqani para se të blesh.</p>` : ""}
         ${unconfirmed ? `<h2 class="sub">edhe këto dyqane e kanë, pa e shkruar madhësinë</h2>
@@ -1350,6 +1366,7 @@ async function route() {
     a.toggleAttribute("aria-current", h === "/" ? pathname === "/" : pathname.startsWith(h));
   });
   document.body.classList.toggle("on-product", pathname.startsWith("/produkt/"));
+  document.body.classList.toggle("at-home", pathname === "/");  // the home page has its own big search
   const params = search.slice(1);
   document.querySelectorAll(".top-nav a").forEach((a) => {
     if (pathname.startsWith(a.getAttribute("href"))) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");

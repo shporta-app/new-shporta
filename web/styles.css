@@ -554,3 +554,39 @@ dialog#report::backdrop { background: rgba(20, 18, 31, .45); }
 .notes .t { font-weight: 600; display: block; }
 .notes small { color: var(--muted); }
 .push-hint { margin-top: 10px; font-size: 15px; }
+
+/* ---------- easier on a phone ---------- */
+/* home: the big search is on the page, so the header doesn't repeat it */
+.at-home .top-search { display: none; }
+.quick { display: flex; gap: 8px; margin-top: 16px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.quick::-webkit-scrollbar { display: none; }
+.quick a { flex: none; text-decoration: none; color: var(--ink); background: var(--soft); border: 1px solid var(--line);
+  border-radius: 999px; padding: 9px 15px; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.quick a:hover { border-color: var(--violet); color: var(--violet); }
+p.hero-stats { display: block; margin: 18px 0 0; font-size: 15px; }
+p.hero-stats b { display: inline; font: 600 15px/1 var(--body); }
+/* tiles: the saving on the picture */
+.tile .pic { position: relative; }
+.tile .off { position: absolute; top: 8px; left: 8px; font: 600 13px/1 var(--display); background: var(--lime); color: #14121F;
+  border-radius: 999px; padding: 6px 9px; }
+.tile .meta { flex-wrap: wrap; }
+.tile .meta .num { font: 600 17px/1.2 var(--display); }
+.ruler-head h3 small { font: 400 14px/1 var(--body); color: var(--muted); }
+@media (max-width: 860px) {
+  .hero { padding: 22px 0 28px; }
+  .hero h1 { font-size: 34px; margin-bottom: 10px; }
+  .hero p { font-size: 17px; margin-bottom: 16px; }
+  .hero-search input { font-size: 17px; padding: 14px 18px; }
+}
+@media (max-width: 560px) {
+  /* two products side by side instead of one picture per screen */
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 12px; }
+  .tile .name { font-size: 15px; }
+  .tile .meta { font-size: 14px; flex-direction: column; gap: 2px; align-items: flex-start; }
+  /* product: a smaller picture, so the prices are on the first screen */
+  .product .pic { max-width: 180px; margin: 0 auto; }
+  .product h1 { font-size: 22px; }
+  /* the price table already lists every shop with its button */
+  .product .ruler { display: none; }
+}
+.hero-in > * { min-width: 0; }  /* the scrolling row of categories never widens the page */
