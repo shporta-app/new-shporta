@@ -1361,15 +1361,23 @@ async function pageScan() {
       Origjinalitetin e një produkti nuk e vërteton dot asnjë foto; kur një dyqan e shet shumë më lirë se të tjerët, të paralajmërojmë.</p>
   </div>`;
   const status = document.getElementById("scan-status"), result = document.getElementById("scan-result");
+  // what the person is waiting for comes onto the screen: the "reading…" line, then the results
+  const reveal = () => result.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "start" });
+  const busy = (text) => { result.innerHTML = `<p class="loading scan-busy">${text}</p>`; reveal(); };
+  const notFound = (d) => `<div class="empty"><b>Nuk e gjetëm këtë produkt.</b>${d && d.valid === false ? "Ky numër nuk duket si barkod. Provo përsëri." :
+    "Pak dyqane e shkruajnë barkodin. Fotografo anën ku shkruhet emri i produktit, ose kërko me emër."}</div>`;
+  const render = (d, label) => {
+    if (d.items.length === 1) { go(`/produkt/${d.items[0].id}`); return; }
+    result.innerHTML = `<h2 class="sub">${esc(label(d))}</h2><div class="grid">${d.items.map(tile).join("")}</div>`;
+    reveal();
+  };
   const show = async (url, label) => {
-    result.innerHTML = `<p class="loading">Duke kërkuar…</p>`;
+    busy("Duke kërkuar…");
     const d = await api(url).catch(() => null);
-    if (!d) { result.innerHTML = `<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`; return; }
-    if (d.items.length === 1) return go(`/produkt/${d.items[0].id}`);
-    result.innerHTML = d.items.length
-      ? `<h2 class="sub">${esc(label(d))}</h2><div class="grid">${d.items.map(tile).join("")}</div>`
-      : `<div class="empty"><b>Nuk e gjetëm këtë produkt.</b>${d.valid === false ? "Ky numër nuk duket si barkod. Provo përsëri." :
-          "Mund të mos shitet online në Shqipëri, ose dyqanet nuk e shkruajnë barkodin. Provo foton e etiketës ose kërko me emër."}</div>`;
+    if (!d) { result.innerHTML = `<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`; return reveal(); }
+    if (d.items.length) return render(d, label);
+    result.innerHTML = notFound(d);
+    reveal();
   };
   const found = (code) => { stop(); navigator.vibrate?.(60); status.textContent = `Barkodi ${code}`; show(`/api/barcode?code=${encodeURIComponent(code)}`, () => `Barkodi ${code}`); };
   let stream = null, timer = null, zx = null;
@@ -1412,22 +1420,43 @@ async function pageScan() {
   document.getElementById("scan-file").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    e.target.value = "";  // the same photo can be chosen again
     stop();
-    result.innerHTML = `<p class="loading">Duke lexuar etiketën në telefon… (herën e parë zgjat pak)</p>`;
+    busy("Duke lexuar foton në telefon… (herën e parë zgjat pak)");
     try {
-      // a barcode in the photo first: exact
+      // 1. a barcode in the photo: exact. Chrome on Android reads it itself, other phones through ZXing
+      let code = null;
       if ("BarcodeDetector" in window) {
-        const bmp = await createImageBitmap(file);
-        const codes = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(bmp).catch(() => []);
-        if (codes.length) return found(codes[0].rawValue);
+        const codes = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(await createImageBitmap(file)).catch(() => []);
+        code = codes[0]?.rawValue || null;
+      } else {
+        await loadScript(ZXING).catch(() => {});
+        if (window.ZXing) {
+          const url = URL.createObjectURL(file);
+          const r = await new ZXing.BrowserMultiFormatReader(new Map([[ZXing.DecodeHintType.TRY_HARDER, true]])).decodeFromImageUrl(url).catch(() => null);
+          URL.revokeObjectURL(url);
+          code = r ? r.getText() : null;
+        }
       }
+      let byCode = null;
+      if (code) {
+        status.textContent = `Barkodi ${code}`;
+        byCode = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
+        if (byCode && byCode.items.length) return render(byCode, () => `Barkodi ${code}`);
+        busy(`Barkodi ${code} nuk është te dyqanet online. Po lexojmë emrin në foto…`);
+      }
+      // 2. the words on the package: the brand and the product's name
       await loadScript(TESSERACT);
       const { data } = await Tesseract.recognize(file, "eng");
       const text = data.text.replace(/\s+/g, " ").trim();
-      if (!text) { result.innerHTML = `<div class="empty"><b>Nuk lexuam dot tekst.</b>Fotografo emrin e produktit nga afër, me dritë.</div>`; return; }
-      show(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`, (d) => d.words && d.words.length ? `Lexuam: ${d.words.join(" ")}` : "Rezultatet");
+      const d = text ? await api(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`).catch(() => null) : null;
+      if (d && d.items.length) return render(d, (x) => x.words && x.words.length ? `Lexuam: ${x.words.join(" ")}` : "Rezultatet");
+      result.innerHTML = code ? notFound(byCode)
+        : `<div class="empty"><b>Nuk e gjetëm nga fotoja.</b>Fotografo emrin e produktit ose barkodin nga afër, me dritë.</div>`;
+      reveal();
     } catch {
       result.innerHTML = `<div class="empty"><b>Nuk e lexuam dot foton.</b>Provo përsëri ose kërko me emër.</div>`;
+      reveal();
     }
   };
 }

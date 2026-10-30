@@ -613,7 +613,8 @@ def identify(text):
     names use, rarest first (a brand or line name says more than "cream"), and search with fewer words until
     something is found. OCR misreads letters, so each word also gets the typo correction."""
     from match import DESCRIPTIONS, NOISE, STOP
-    vocab, skip = vocabulary(), DESCRIPTIONS | NOISE | STOP | {"for", "with", "dry", "oily", "normal", "all", "types"}
+    vocab, skip = vocabulary(), DESCRIPTIONS | NOISE | STOP | {"for", "with", "dry", "oily", "normal", "all", "types", "very",
+                                                                  "sensitive", "combination", "skin", "use", "daily", "day"}
     words = []
     for w in re.findall(r"[a-z0-9]{3,}", fold(text)):
         if w in skip:
@@ -622,7 +623,9 @@ def identify(text):
         if w in vocab and w not in words:
             words.append(w)
     brands = brand_words()
-    words.sort(key=lambda w: (w not in brands, vocab[w]))  # the brand first, then the rarest words
+    # the brand first, then the words in the order the label prints them: the product's name comes right after the brand,
+    # in big letters; the small print under it ("for dry to very dry skin") comes later
+    words.sort(key=lambda w: w not in brands)
     # words one at a time, brand and rarest first; a word that leaves nothing ("strength", "high" on the label but
     # not in any product name) is skipped, so marketing text on a label can't push the search off the product
     chosen, total = [], 0

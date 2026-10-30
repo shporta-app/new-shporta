@@ -939,3 +939,7 @@ table.offers:not(.all) tr.extra { display: none; }
 /* the button sits above the (still invisible) camera picture, so the tap reaches it */
 .scan-start { position: relative; z-index: 2; }
 .scan-stage video { pointer-events: none; }
+/* skano: results land under the sticky header, not behind it */
+#scan-result { scroll-margin-top: 140px; }
+@media (min-width: 761px) { #scan-result { scroll-margin-top: 90px; } }
+.scan-busy { padding: 24px 0; }
