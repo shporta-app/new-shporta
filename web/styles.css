@@ -1168,6 +1168,11 @@ a, button { touch-action: manipulation; }
   .tour-card.on .tv-type, .tour-card.on .tv-offers i::after, .tour-card.on .tv-save b, .tour-card.on .tv-note { animation: none; }
 }
 
+/* ---------- the camera's light ---------- */
+.scan-torch { position: absolute; left: 12px; top: 12px; z-index: 3; width: 44px; height: 44px; border-radius: 50%; border: 0;
+  background: rgba(20, 18, 31, .6); color: #fff; font-size: 20px; cursor: pointer; }
+.scan-torch[aria-pressed="true"] { background: var(--lime); }
+
 /* ---------- the guide ("?") ---------- */
 dialog.guide { border: 0; padding: 0; background: none; width: min(420px, calc(100% - 32px)); max-width: none; overflow: visible; color: #F1EFF7;
   transition: opacity .2s var(--ease-out), transform .2s var(--ease-out), display .2s allow-discrete, overlay .2s allow-discrete; }

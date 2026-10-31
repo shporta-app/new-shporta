@@ -45,6 +45,7 @@ from match import GENERIC, MEN_WORDS, PERFUME_WORDS, SECOND_HAND, WOMEN_WORDS, g
 HERE = Path(__file__).parent
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("application/wasm", ".wasm")  # the barcode reader (web/vendor), compiled while it downloads
 WEB = HERE / "web"
 PORT = int(os.environ.get("PORT", 8787))
 DB_FILE = Path(os.environ["PHIA_DB"]) if os.environ.get("PHIA_DB") else HERE / "seed" / "phia-api.db"  # PHIA_DB: test a new build locally

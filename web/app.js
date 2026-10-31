@@ -1727,6 +1727,23 @@ const loadScript = (src) => new Promise((ok, fail) => {
 });
 let scanStop = null;  // stops the camera when leaving the page
 
+// The barcode reader: zxing-cpp compiled to WebAssembly (zxing-wasm 3.1.6, web/vendor), the same engine many scanner
+// apps use. It reads EAN/UPC from a camera frame, tilted, small or a little blurred, on every phone and browser.
+const FORMATS = ["EAN13", "EAN8", "UPCA", "UPCE"];
+let _zx;
+async function wasmReader() {
+  if (!_zx) _zx = loadScript("/vendor/zxing-reader.js").then(() => {
+    ZXingWASM.prepareZXingModule({ overrides: { locateFile: (p, prefix) => (p.endsWith(".wasm") ? "/vendor/zxing_reader.wasm" : prefix + p) } });
+    return ZXingWASM;
+  });
+  return _zx;
+}
+async function readCodes(source, tryHarder = true) {
+  const Z = await wasmReader();
+  const r = await Z.readBarcodes(source, { formats: FORMATS, tryHarder, tryRotate: true, maxNumberOfSymbols: 1 }).catch(() => []);
+  return r.filter((x) => x.isValid).map((x) => x.text);
+}
+
 // The phone's own barcode reader counts only when it really reads EAN/UPC codes: on some browsers it exists but
 // reads nothing, and the scan waited forever.
 let _native;
@@ -1816,25 +1833,25 @@ async function pageScan() {
       ${photoBtn}</div>`);
   };
 
-  // the camera: a code counts only when it is read the same twice in a row with a correct check digit
+  // the camera: a code with a correct check digit, read by zxing-cpp (which checks it too), is the code
   let stream = null, timer = null, zx = null, last = null;
   const checkDigit = (c) => { const d = c.split("").map(Number), body = d.slice(0, -1).reverse();
     return (10 - body.reduce((t, x, i) => t + x * (i % 2 ? 1 : 3), 0) % 10) % 10 === d[d.length - 1]; };
   const seen = (code) => {
-    if (!/^\d{8,14}$/.test(code) || !checkDigit(code)) return;
-    if (code !== last) { last = code; return; }
+    if (!stream || !/^\d{8,14}$/.test(code) || !checkDigit(code)) return;
     stop(); navigator.vibrate?.(60); byCode(code);
   };
   let hint = null;
   const stop = () => {
     clearTimeout(hint); hint = null;
     clearInterval(timer); timer = null; last = null;
+    document.getElementById("scan-torch")?.remove();
     if (zx) { zx.reset(); zx = null; }
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
     stage.classList.remove("live"); stage.hidden = true;
   };
   scanStop = stop;
-  const video = { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] };
+  const video = { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } };
   document.getElementById("way-code").onclick = async () => {
     result.innerHTML = "";
     stage.hidden = false;
@@ -1842,29 +1859,52 @@ async function pageScan() {
     stage.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "center" });
     const v = document.getElementById("scan-video");
     try {
-      if (await nativeReader()) {
-        stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-        v.srcObject = stream;
-        await v.play();
-        const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-        timer = setInterval(async () => { const c = await det.detect(v).catch(() => []); if (c.length) seen(c[0].rawValue); }, 200);
-      } else {
-        await loadScript(ZXING);
-        const hints = new Map([[ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
-          ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E]], [ZXing.DecodeHintType.TRY_HARDER, true]]);
-        zx = new ZXing.BrowserMultiFormatReader(hints, 120);
-        await zx.decodeFromConstraints({ video: { ...video, width: { ideal: 1280 }, height: { ideal: 720 } } }, v, (r) => { if (r) seen(r.getText()); });
+      const ready = wasmReader();  // downloads while the camera opens
+      stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      v.srcObject = stream;
+      await v.play();
+      const track = stream.getVideoTracks()[0];
+      // focus that keeps adjusting, and a little zoom so a small barcode fills more of the picture (where the phone allows)
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      const adv = {};
+      if ((caps.focusMode || []).includes("continuous")) adv.focusMode = "continuous";
+      if (caps.zoom && caps.zoom.max >= 1.5) adv.zoom = Math.min(caps.zoom.max, 1.6);
+      if (Object.keys(adv).length) track.applyConstraints({ advanced: [adv] }).catch(() => {});
+      if (caps.torch) {  // a light for a dark shop
+        stage.insertAdjacentHTML("beforeend", `<button type="button" class="scan-torch" id="scan-torch" aria-pressed="false" aria-label="Drita">💡</button>`);
+        const tb = document.getElementById("scan-torch");
+        tb.onclick = () => { const on = tb.getAttribute("aria-pressed") !== "true"; track.applyConstraints({ advanced: [{ torch: on }] }).catch(() => {}); tb.setAttribute("aria-pressed", on); };
       }
+      const det = (await nativeReader()) ? new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }) : null;
+      await ready;
+      const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+      let working = false, n = 0;
+      timer = setInterval(async () => {
+        if (working || !stream || v.readyState < 2 || !v.videoWidth) return;
+        working = true;
+        try {
+          // the band in the middle of the picture, where the frame on screen is; every third frame the whole picture
+          const vw = v.videoWidth, vh = v.videoHeight, whole = ++n % 3 === 0;
+          const cw = whole ? vw : Math.round(vw * 0.92), ch = whole ? vh : Math.round(vh * (vw > vh ? 0.6 : 0.4));
+          const k = Math.min(1, 1280 / Math.max(cw, ch));
+          canvas.width = Math.round(cw * k); canvas.height = Math.round(ch * k);
+          ctx.drawImage(v, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, canvas.width, canvas.height);
+          let code = null;
+          if (det) code = (await det.detect(canvas).catch(() => [])).map((x) => x.rawValue).find((x) => /^\d{8,14}$/.test(x) && checkDigit(x));
+          if (!code) code = (await readCodes(ctx.getImageData(0, 0, canvas.width, canvas.height), n % 2 === 0))[0];
+          if (code) seen(code);
+        } finally { working = false; }
+      }, 90);
       stage.classList.add("live");
-      status.textContent = "Mbaje barkodin brenda kornizës, 10–15 cm larg.";
-      // nothing read after a while: say what helps, and the other ways, while the camera keeps trying
+      status.textContent = "Drejtoje kamerën te barkodi, të duket i plotë brenda kornizës.";
+      // nothing read after a while: the other ways, while the camera keeps trying
       hint = setTimeout(() => {
         if (!stage.classList.contains("live")) return;
-        status.textContent = "Nuk po e lexojmë? Afroje ose largoje pak, me dritë, pa shkëlqim.";
+        status.textContent = "Mbaje telefonin drejt dhe të qetë, me dritë mbi barkod.";
         result.innerHTML = (`<p class="note scan-help">Barkodi nuk po lexohet? <button type="button" class="linkish" id="scan-typeit">Shkruaj numrin</button>
           ose <label class="linkish">bëj një foto<input type="file" accept="image/*" capture="environment" hidden data-photo></label>.</p>`);
         document.getElementById("scan-typeit").onclick = () => { stop(); const t = main.querySelector(".scan-type"); t.open = true; document.getElementById("scan-digits").focus(); };
-      }, 8000);
+      }, 12000);
     } catch {
       stop();
       say(`<div class="scan-unsure"><b>Kamera nuk u hap.</b><p>Lejo kamerën te cilësimet e shfletuesit, ose bëj një foto.</p>${photoBtn}</div>`);
@@ -1890,6 +1930,9 @@ async function pageScan() {
       }
       if (!code) {
         busy("Po kërkojmë barkodin në foto…");
+        code = (await readCodes(file).catch(() => []))[0] || null;
+      }
+      if (!code) {
         await loadScript(ZXING).catch(() => {});
         if (window.ZXing) {
           const reader = new ZXing.MultiFormatReader();
