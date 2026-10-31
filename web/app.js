@@ -1396,6 +1396,111 @@ function reportDialog(it) {
   d.showModal();
 }
 
+/* ---------- the menu: every place in shporta, one tap from anywhere (a sheet on phones, a side panel on computers) ---------- */
+const MI = (d) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const MENU = [
+  [null, [
+    ["/kategorite", "Kategoritë", MI('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>')],
+    ["/dupe", "Dupe: alternativa më të lira", MI('<path d="M8 4h8l-1 5H9z"/><path d="M9 9c-2 2-3 4-3 7a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4c0-3-1-5-3-7"/>')],
+    ["/raport", "Raporti i çmimeve", MI('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>')],
+    ["/dyqanet", "Dyqanet", MI('<path d="M4 9l1.5-5h13L20 9M4 9h16v11H4zM9 20v-6h6v6"/>')],
+  ]],
+  ["Mjetet e mia", [
+    ["/skano", "Skano barkodin", MI('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/>')],
+    ["/ndaj", "Krahaso një link", MI('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')],
+    ["/shporta", "Shporta ime", MI('<path d="M3 6h2l2.2 10.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.2L20.5 9H6.2"/><circle cx="9.5" cy="21" r="1"/><circle cx="17" cy="21" r="1"/>'), "basket"],
+    ["/lista", "Të ndjekurat", MI('<path d="M12 21s-7-4.4-9.3-9A5.2 5.2 0 0 1 12 6.5 5.2 5.2 0 0 1 21.3 12C19 16.6 12 21 12 21z"/>')],
+    ["/njoftime", "Njoftimet", MI('<path d="M6 9a6 6 0 0 1 12 0c0 4.5 1.6 6.3 2.4 7H3.6C4.4 15.3 6 13.5 6 9z"/><path d="M10 19.5a2.2 2.2 0 0 0 4 0"/>'), "bell"],
+  ]],
+  ["shporta kudo", [
+    ["#install", "Shkarko aplikacionin", MI('<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3"/>'), "install"],
+    ["/shtesa", "Shtesa për shfletuesin", MI('<path d="M10 3h4v3a2 2 0 1 0 0 4v0h3v4h-3a2 2 0 1 0 0 4v3h-4v-3a2 2 0 1 0-4 0v3H3v-7h3a2 2 0 1 0 0-4H3V3h7z"/>')],
+    ["#share", "Ndaje shportën me një mik", MI('<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>'), "share"],
+  ]],
+  ["Rreth shportës", [
+    ["/rreth", "Si funksionon", MI('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>')],
+    ["/per-dyqanet", "Për dyqanet", MI('<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/>')],
+    ["/privatesia", "Cookies dhe privatësia", MI('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/>')],
+  ]],
+];
+function menuDialog() {
+  let d = document.getElementById("menu");
+  if (d) return d;
+  const row = ([href, label, icon, kind]) => {
+    if (kind === "install" && isStandalone()) return "";
+    if (kind === "share" && !navigator.share) return "";
+    const tag = href.startsWith("#") ? `button type="button" data-menu="${kind}"` : `a href="${href}" data-link`;
+    return `<li><${tag} class="menu-row">${icon}<span>${label}</span>${kind === "basket" || kind === "bell" ? `<b class="menu-count" data-count="${kind}"></b>` : ""}
+      <svg class="chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></${tag.split(" ")[0]}></li>`;
+  };
+  document.body.insertAdjacentHTML("beforeend", `<dialog class="menu" id="menu" aria-label="Menuja">
+    <div class="menu-grab" aria-hidden="true"></div>
+    <div class="menu-hd"><a class="brand" href="/" data-link aria-label="shporta, faqja kryesore"><img src="/assets/shporta-mark.svg" alt="" width="30" height="30"><span class="wm">shp<i></i>rta</span></a>
+      <button type="button" class="menu-x" data-menu="close" aria-label="Mbyll menynë" autofocus>${MI('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>
+    <nav class="menu-body" aria-label="Menuja">${MENU.map(([title, rows]) =>
+      `<section>${title ? `<h2>${title}</h2>` : ""}<ul>${rows.map(row).join("")}</ul></section>`).join("")}
+      <p class="menu-foot" id="menu-updated"></p></nav>
+  </dialog>`);
+  d = document.getElementById("menu");
+  d.addEventListener("click", async (e) => {
+    if (e.target === d) return closeMenu();  // the dimmed area around the sheet
+    const b = e.target.closest("[data-menu]");
+    if (e.target.closest("a[data-link]")) return closeMenu(true);
+    if (!b) return;
+    if (b.dataset.menu === "close") closeMenu();
+    if (b.dataset.menu === "share") navigator.share({ title: "shporta", text: "Krahaso çmimin e të njëjtit produkt në dyqanet online të Shqipërisë", url: "https://shporta.app/?nga=ndaj" }).catch(() => {});
+    if (b.dataset.menu === "install") {
+      closeMenu();
+      if (installPrompt) {
+        installPrompt.prompt();
+        const { outcome } = await installPrompt.userChoice;
+        installPrompt = null;
+        if (outcome !== "accepted") try { localStorage.setItem(INSTALL_KEY, String(Date.now())); } catch {}
+      } else installCard(true);  // iPhone and browsers without the prompt: how to add it by hand
+    }
+  });
+  d.addEventListener("close", () => document.getElementById("menu-open").setAttribute("aria-expanded", "false"));
+  // a sheet you can pull down to close, like any phone app
+  let y0 = null, dy = 0;
+  d.addEventListener("touchstart", (e) => {
+    const body = d.querySelector(".menu-body");
+    y0 = (body.scrollTop <= 0 || !body.contains(e.target)) && matchMedia("(max-width: 719px)").matches ? e.touches[0].clientY : null; dy = 0;
+  }, { passive: true });
+  d.addEventListener("touchmove", (e) => {
+    if (y0 === null) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    d.style.transition = "none";
+    d.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  d.addEventListener("touchend", () => {
+    if (y0 === null) return;
+    d.style.transition = d.style.transform = "";
+    if (dy > 90) closeMenu();
+    y0 = null;
+  });
+  return d;
+}
+function openMenu() {
+  const d = menuDialog();
+  const n = basketList().reduce((t, b) => t + b.qty, 0);
+  d.querySelectorAll("[data-count]").forEach((c) => {
+    c.textContent = c.dataset.count === "basket" ? (n || "") : (document.querySelector("#nav-bell b")?.textContent || "");
+  });
+  d.querySelectorAll("a[data-link]").forEach((a) => a.toggleAttribute("aria-current",
+    a.getAttribute("href") !== "/" && location.pathname.startsWith(a.getAttribute("href"))));
+  d.querySelector("#menu-updated").textContent = document.getElementById("foot-updated")?.textContent || "";
+  d.showModal();
+  document.getElementById("menu-open").setAttribute("aria-expanded", "true");
+}
+function closeMenu(now = false) {
+  const d = document.getElementById("menu");
+  if (!d || !d.open) return;
+  if (now || calm()) return d.close();  // a link: the next page appears at once, no waiting on the sheet
+  d.classList.add("closing");
+  setTimeout(() => { d.classList.remove("closing"); d.close(); }, 200);
+}
+document.getElementById("menu-open").addEventListener("click", openMenu);
+
 /* ---------- instant suggestions while typing ---------- */
 function wireSuggest(form) {
   if (form.dataset.suggest) return;
