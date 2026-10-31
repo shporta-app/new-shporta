@@ -617,6 +617,7 @@ async function pageItem(id) {
         ${story}
         <p class="watch"><button type="button" class="btn" id="basket-add" aria-pressed="${inBasket(it.id)}"></button>
           <button type="button" class="btn btn-ghost" id="watch" aria-pressed="${watching(it.id)}"></button>
+          <button type="button" class="btn btn-ghost share-btn" id="share-item" aria-label="Ndaj këtë produkt"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>Ndaj</button>
           <small>Ruhet vetëm në këtë shfletues. Kur rihap shportën, të tregojmë nëse çmimi ra.</small></p>
         ${it.alerts ? `<form class="alert-form" id="alert-form">
           <label for="alert-email">Më njofto me email kur bie çmimi</label>
@@ -675,8 +676,18 @@ async function pageItem(id) {
   btn.onclick = () => { const on = watchToggle(it); watchNow = null; label(); if (on) offerPush(btn); };
   if (location.hash === "#ndiq" && !watching(it.id)) {  // "Ndiq çmimin" from the browser extension
     watchToggle(it); watchNow = null; label();
-    history.replaceState(null, "", location.pathname);
+    history.replaceState(history.state, "", location.pathname);
   }
+  const share = document.getElementById("share-item");
+  share.onclick = async () => {
+    const url = `https://shporta.app/produkt/${encodeURIComponent(it.id)}`;
+    const cheap = (it.offers || []).filter((o) => o.in_stock).sort((a, b) => a.price - b.price)[0];
+    const text = cheap ? `${it.title}: nga ${lek(cheap.price, cheap.currency)} te ${shopName(cheap.shop)}` : it.title;
+    if (navigator.share) return navigator.share({ title: it.title, text, url }).catch(() => {});
+    try { await navigator.clipboard.writeText(url); share.textContent = "Linku u kopjua ✓"; }
+    catch { share.textContent = "Kopjo linkun nga shiriti i adresës"; }
+    setTimeout(() => { share.textContent = "Ndaj"; }, 2500);
+  };
   const form = document.getElementById("alert-form");
   if (form) form.onsubmit = async (e) => {
     e.preventDefault();
@@ -1779,7 +1790,8 @@ async function route() {
 }
 
 function go(url) {
-  history.pushState(null, "", url);
+  history.replaceState({ ...(history.state || {}), y: window.scrollY }, "");  // back returns to this spot
+  history.pushState({ depth: ((history.state || {}).depth || 0) + 1 }, "", url);
   window.scrollTo(0, 0);
   route().then(() => {
     main.focus({ preventScroll: true });
@@ -1800,7 +1812,19 @@ document.addEventListener("submit", (e) => {
   const q = new FormData(e.target).get("q").trim();
   if (q) go(`/kerko?q=${encodeURIComponent(q)}`);
 });
-window.addEventListener("popstate", route);
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+window.addEventListener("popstate", (e) => {
+  const y = (e.state && e.state.y) || 0;
+  route().then(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+});
+// the back arrow: one step back inside shporta, or up to the page this one belongs to when you arrived here directly
+const backBtn = document.getElementById("nav-back");
+function backTarget() {
+  return document.querySelector("main .crumbs a")?.getAttribute("href") || "/";
+}
+backBtn.onclick = () => ((history.state || {}).depth > 0 ? history.back() : go(backTarget()));
+backBtn.hidden = location.pathname === "/";
+new MutationObserver(() => { backBtn.hidden = location.pathname === "/"; }).observe(main, { childList: true });
 route();
 watchBadge();
 basketBadge();

@@ -1055,3 +1055,15 @@ a, button { touch-action: manipulation; }
 @media (display-mode: standalone) {
   .top { padding-top: env(safe-area-inset-top); }
 }
+
+/* ---------- back arrow, share, comfortable tap targets ---------- */
+.back-btn { display: none; }
+@media (max-width: 860px) {
+  .back-btn:not([hidden]) { display: inline-grid; place-items: center; width: 40px; height: 40px; margin-left: -8px; margin-right: -6px;
+    border: 0; border-radius: 50%; background: none; color: inherit; cursor: pointer; flex: none; }
+  .back-btn:not([hidden]):active { background: rgba(255, 255, 255, .12); }
+}
+.share-btn { display: inline-flex; align-items: center; gap: 8px; }
+.linkish { min-height: 44px; display: inline-flex; align-items: center; }
+.unit li a { display: inline-flex; align-items: center; min-height: 44px; }
+.crumbs a { display: inline-flex; align-items: center; min-height: 36px; }
