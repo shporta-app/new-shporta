@@ -947,8 +947,14 @@ def offers_like(raw, brands, idf):
         named = have - set(brands)
         if len(named & said) < 2:
             continue  # the brand alone, or one word, is not this product
+        # a powder is not a foundation: when both say what kind of product it is, they must agree
+        kinds = {"powder", "foundation", "concealer", "primer", "mascara", "lipstick", "gloss", "liner", "eyeliner", "blush",
+                 "bronzer", "highlighter", "spray", "cream", "serum", "toner", "cleanser", "mask", "shampoo", "conditioner",
+                 "oil", "gel", "lotion", "balm", "palette", "pencil", "cushion", "fluid", "parfum", "toilette", "deodorant"}
+        if have & kinds and said & kinds and not have & said & kinds:
+            continue
         hit = len(have & said) / len(have)
-        if hit >= 0.7:
+        if hit >= 0.6:
             best.append((hit, o))
     # the shade or number printed on the package ("120 Classic Ivory") first
     nums = {n for n in raw if n.isdigit()}
