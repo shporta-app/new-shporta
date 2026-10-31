@@ -1763,6 +1763,38 @@ async function shrink(file, max) {
   return c;
 }
 
+// one OCR worker for the whole visit, set for scattered text (a label, not a page)
+let _ocr;
+function ocrWorker() {
+  if (!_ocr) _ocr = loadScript(TESSERACT).then(async () => {
+    const w = await Tesseract.createWorker("eng");
+    await w.setParameters({ tessedit_pageseg_mode: "11", preserve_interword_spaces: "1" });
+    return w;
+  }).catch((e) => { _ocr = null; throw e; });
+  return _ocr;
+}
+// a copy of the photo made for reading: turned, grey, its darkest and lightest 2% stretched to black and white
+// (a shiny or dim package becomes sharp text), inverted for white letters on a dark package
+function prep(src, turn, invert) {
+  const c = document.createElement("canvas"), side = turn % 180 !== 0;
+  c.width = side ? src.height : src.width; c.height = side ? src.width : src.height;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  x.translate(c.width / 2, c.height / 2); x.rotate((turn * Math.PI) / 180); x.drawImage(src, -src.width / 2, -src.height / 2);
+  const img = x.getImageData(0, 0, c.width, c.height), p = img.data, hist = new Uint32Array(256);
+  for (let i = 0; i < p.length; i += 4) { const g = (p[i] * 299 + p[i + 1] * 587 + p[i + 2] * 114) / 1000 | 0; p[i] = g; hist[g]++; }
+  const n = p.length / 4; let lo = 0, hi = 255, acc = 0;
+  while (lo < 255 && (acc += hist[lo]) < n * 0.02) lo++;
+  acc = 0; while (hi > 0 && (acc += hist[hi]) < n * 0.02) hi--;
+  const k = 255 / Math.max(1, hi - lo);
+  for (let i = 0; i < p.length; i += 4) {
+    let g = Math.max(0, Math.min(255, (p[i] - lo) * k));
+    if (invert) g = 255 - g;
+    p[i] = p[i + 1] = p[i + 2] = g;
+  }
+  x.setTransform(1, 0, 0, 1, 0, 0); x.putImageData(img, 0, 0);
+  return c;
+}
+
 async function pageScan() {
   document.title = "Skano një produkt | shporta";
   const icoCode = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>`;
@@ -1806,8 +1838,14 @@ async function pageScan() {
   };
   const searchBox = (q) => `<form class="scan-code" data-search><input name="q" value="${esc(q)}" aria-label="Kërko produktin">
         <button class="btn" type="submit">Kërko</button></form>`;
+  const offerRows = (offers) => `<table class="offers"><tbody>${offers.map((o) => `<tr><td><b>${esc(shopName(o.shop))}</b>
+      <span class="otitle">${esc(o.title)}</span></td><td class="price">${lek(o.price, o.currency)}</td>
+      <td><a class="btn btn-ghost" href="/go/${o.id}?f=skano" target="_blank" rel="noopener sponsored">Hape</a></td></tr>`).join("")}</tbody></table>`;
   const unsure = (d, what = "") => {
     const q = (d.words || []).join(" ");
+    if (d.offers && d.offers.length) return say(`<div class="scan-unsure"><b>E gjetëm te ${d.offers.length === 1 ? "ky dyqan" : "këto dyqane"}.</b>
+      <p>${what}Nuk e krahasojmë ende (dyqanet e shkruajnë emrin ndryshe), por këtu e shesin. Kontrollo ngjyrën ose madhësinë te dyqani.</p></div>
+      ${offerRows(d.offers)}${searchBox(q)}`);
     if (d.maybe && d.maybe.length) return say(`<div class="scan-unsure"><b>Mund të jetë njëri nga këto.</b>
       <p>${what}Zgjidh atë që ke në dorë, ose kërko vetë.</p></div>
       <div class="grid">${d.maybe.map(tile).join("")}</div>${searchBox(q)}`);
@@ -1849,9 +1887,17 @@ async function pageScan() {
   let stream = null, timer = null, zx = null, last = null;
   const checkDigit = (c) => { const d = c.split("").map(Number), body = d.slice(0, -1).reverse();
     return (10 - body.reduce((t, x, i) => t + x * (i % 2 ? 1 : 3), 0) % 10) % 10 === d[d.length - 1]; };
+  let got = false;
   const seen = (code) => {
-    if (!stream || !/^\d{8,14}$/.test(code) || !checkDigit(code)) return;
-    stop(); navigator.vibrate?.(60); byCode(code);
+    if (got || !stream || !/^\d{8,14}$/.test(code) || !checkDigit(code)) return;
+    got = true;
+    clearInterval(timer); timer = null; clearTimeout(hint);
+    const v = document.getElementById("scan-video");
+    v.pause();
+    stage.classList.add("got");
+    status.textContent = `✓ U lexua: ${code}`;
+    navigator.vibrate?.(80);
+    setTimeout(() => { stop(); got = false; byCode(code); }, 900);
   };
   let hint = null;
   const stop = () => {
@@ -1860,7 +1906,7 @@ async function pageScan() {
     document.getElementById("scan-torch")?.remove();
     if (zx) { zx.reset(); zx = null; }
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-    stage.classList.remove("live"); stage.hidden = true;
+    stage.classList.remove("live", "got"); stage.hidden = true;
   };
   scanStop = stop;
   const video = { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } };
@@ -1963,17 +2009,25 @@ async function pageScan() {
         navigator.vibrate?.(60);
         return byCode(code);
       }
-      busy("Po lexojmë emrin në foto… 0%");
-      await loadScript(TESSERACT);
-      const ocr = Tesseract.recognize(canvas, "eng", { logger: (m) => {
-        if (m.status === "recognizing text") busy(`Po lexojmë emrin në foto… ${Math.round(m.progress * 100)}%`);
-        else if (/load/.test(m.status)) busy("Po përgatisim leximin (vetëm herën e parë)…");
-      } });
-      const { data } = await Promise.race([ocr, new Promise((_, no) => setTimeout(() => no(new Error("koha")), 60000))]);
-      const text = data.text.replace(/\s+/g, " ").trim();
-      if (!text) return say(`<div class="scan-unsure"><b>Nuk lexuam dot asnjë fjalë.</b><p>Fotografo emrin e produktit nga afër, me dritë.</p>${photoBtn}</div>`);
-      busy("Po e kërkojmë te dyqanet…");
-      const d = await api(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`).catch(() => null);
+      // the words on the package, read on the phone in several passes (a label is not a page of text): the picture
+      // made grey with full contrast, as scattered text; turned for text running up a tube; inverted for white on dark.
+      // After each pass what was read so far is looked up; the first sure answer ends it.
+      busy("Po përgatisim leximin (vetëm herën e parë)…");
+      const worker = await ocrWorker();
+      const passes = [["drejt", prep(canvas, 0, false)], ["kthyer", prep(canvas, 90, false)], ["e kundërt", prep(canvas, 0, true)],
+        ["kthyer", prep(canvas, 270, false)]];
+      let text = "", d = null;
+      for (let i = 0; i < passes.length; i++) {
+        busy(`Po lexojmë emrin në foto… ${i + 1}/${passes.length}`);
+        const r = await Promise.race([worker.recognize(passes[i][1]), new Promise((_, no) => setTimeout(() => no(new Error("koha")), 25000))]).catch(() => null);
+        const t = r ? r.data.text.replace(/\s+/g, " ").trim() : "";
+        if (!t || t.replace(/[^a-z]/gi, "").length < 3) continue;
+        text = `${text} ${t}`.trim();
+        busy("Po e kërkojmë te dyqanet…");
+        d = await api(`/api/identify?text=${encodeURIComponent(text.slice(0, 900))}`).catch(() => d);
+        if (d && d.sure) break;
+      }
+      if (!text) return say(`<div class="scan-unsure"><b>Nuk lexuam dot asnjë fjalë.</b><p>Fotografo emrin e produktit nga afër, me dritë, pa shkëlqim.</p>${photoBtn}</div>`);
       if (!d) return say(`<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`);
       show(d, `Lexuam: ${esc(d.words.join(" "))}`);
     } catch {

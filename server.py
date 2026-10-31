@@ -716,13 +716,16 @@ def barcode(code):
     if not rec:
         rec, source = upc_product(g), "UPCitemdb"
     if rec:
-        brand = (rec.get("brands") or "").split(",")[0].strip()
+        brands = [b.strip() for b in (rec.get("brands") or "").split(",") if b.strip()]
         names = [x for x in (rec.get("product_name_en"), rec.get("product_name"), rec.get("product_name_fr")) if x]
+        # "L'Oréal, Maybelline": the brand printed on the product is the one our shops use; the owner comes first in the record
+        ours = brand_words()
+        brand = next((b for b in brands if any(w in ours for w in re.findall(r"[a-z0-9]+", fold(b)))), brands[0] if brands else "")
         out["name"] = " ".join(x for x in (brand, names[0] if names else "", rec.get("quantity")) if x)
         out["source"] = source
-        m = match_text(" ".join(names[:1] + [rec.get("quantity") or ""]), brand, exact_name=True)
+        m = match_text(" ".join(names[:1] + [rec.get("quantity") or ""]), " ".join(brands), exact_name=True)
         out.update(how="name", sure=m["sure"], items=m["items"], maybe=m["maybe"], size_missing=m["size_missing"],
-                   size_ok=not m["size_missing"])
+                   size_ok=not m["size_missing"], offers=m.get("offers", []), words=m["words"])
     return out
 
 
@@ -859,7 +862,8 @@ def match_text(text, brand_hint="", exact_name=False):
         for it in search_items([k], 800)[1]:
             cand[it["id"]] = it
     if not cand:
-        return {"items": [], "sure": False, "maybe": [], "words": [w for w in raw if w in df][:6], "brand": None}
+        return {"items": [], "sure": False, "maybe": [], "offers": offers_like(raw, found_brands, idf),
+                "words": [w for w in raw if w in df][:6] or [w for w in raw if len(w) >= 3][:6], "brand": None}
     scored = []
     for it in cand.values():
         words = set(name_words(it["title"]))
@@ -918,10 +922,44 @@ def match_text(text, brand_hint="", exact_name=False):
         elif sure:
             size_missing = True  # the right product, but not in the size on the package: shown as other sizes
     maybe = [] if sure else [s[2] for s in scored[:12] if s[1] >= 0.4][:6]
-    return {"items": items if sure else [], "sure": sure, "size_missing": size_missing, "maybe": maybe,
+    offers = [] if sure or maybe else offers_like(raw, found_brands, idf)
+    return {"items": items if sure else [], "sure": sure, "size_missing": size_missing, "maybe": maybe, "offers": offers,
             "words": [w for w in dict.fromkeys(raw) if w in df and w in best[3]][:6] or [w for w in raw if w in df][:6],
             "brand": found_brands[0] if found_brands else None,
             "printed_size": size_label(*sorted(sizes, key=lambda z: z[1] == "oz")[0]) if sizes else None}
+
+
+def offers_like(raw, brands, idf):
+    """A product we don't compare (no two shops sell it under one name), but that shops we follow do sell: their
+    listings whose name has the brand and most words of what was read, one per shop, in stock first."""
+    common = LABEL_WORDS | SIZE_LABELS | {"made", "for", "in", "by", "of", "new", "the", "and", "with"}
+    words = [w for w in dict.fromkeys(raw) if len(w) >= 3 and not w.isdigit() and w not in common]
+    if not words:
+        return []
+    # each brand and the two most telling words, one at a time: a shop may leave the brand out of the name
+    keys = list(dict.fromkeys(brands[:3] + sorted((w for w in words if w not in brands), key=lambda w: -len(w))[:2]))
+    rows = {r["id"]: dict(r) for r in db().execute(  # one pass over the listings
+        f"SELECT {COLS} FROM products WHERE {' OR '.join('name_key LIKE ?' for _ in keys)} LIMIT 8000", [f"%{k}%" for k in keys])}
+    said = set(words)
+    best = []
+    for o in rows.values():
+        have = set(name_words(o["title"]))
+        named = have - set(brands)
+        if len(named & said) < 2:
+            continue  # the brand alone, or one word, is not this product
+        hit = len(have & said) / len(have)
+        if hit >= 0.7:
+            best.append((hit, o))
+    # the shade or number printed on the package ("120 Classic Ivory") first
+    nums = {n for n in raw if n.isdigit()}
+    best.sort(key=lambda x: (-bool(nums & set(re.findall(r"\d+", fold(x[1]["title"])))), -x[0], -x[1]["in_stock"], x[1]["price"]))
+    seen_shop, out = set(), []
+    for hit, o in best:
+        if (o["shop"], fold(o["title"])) in seen_shop:
+            continue
+        seen_shop.add((o["shop"], fold(o["title"])))
+        out.append(public(o))
+    return out[:8]
 
 
 def identify(text):

@@ -1168,6 +1168,11 @@ a, button { touch-action: manipulation; }
   .tour-card.on .tv-type, .tour-card.on .tv-offers i::after, .tour-card.on .tv-save b, .tour-card.on .tv-note { animation: none; }
 }
 
+/* ---------- a barcode read: the picture stops and the frame turns green, then the result ---------- */
+.scan-stage.got .scan-frame i { animation: none; opacity: 0; }
+.scan-stage.got .scan-frame { box-shadow: 0 0 0 3px var(--lime) inset, 0 0 0 9999px rgba(20, 18, 31, .45); transition: box-shadow .2s var(--ease-out); }
+.scan-stage.got .scan-status { background: var(--lime); color: #14121F; font-weight: 700; }
+
 /* ---------- the camera's light ---------- */
 .scan-torch { position: absolute; left: 12px; top: 12px; z-index: 3; width: 44px; height: 44px; border-radius: 50%; border: 0;
   background: rgba(20, 18, 31, .6); color: #fff; font-size: 20px; cursor: pointer; }
