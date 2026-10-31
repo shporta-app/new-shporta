@@ -1665,4 +1665,5 @@ if __name__ == "__main__":
     print(f"listening on :{PORT}", flush=True)
     threading.Thread(target=push.morning, args=(DB_FILE, lambda m: print(json.dumps({"push": m}), flush=True)),
                      daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    # only Caddy, on the same machine, talks to the app; HOST=0.0.0.0 to open it on a local network for testing
+    ThreadingHTTPServer((os.environ.get("HOST", "127.0.0.1"), PORT), Handler).serve_forever()

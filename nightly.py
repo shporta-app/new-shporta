@@ -214,6 +214,46 @@ def backup():
     for old in sorted(BACKUP.glob("phia-*.db.gz"))[:-7]:
         old.unlink()
     log(f"backup {out.name} ({out.stat().st_size / 1e6:.0f} MB)")
+    backup_private()
+
+
+PRIVATE = ["alerts.db", "stats.db", "feedback.db", "crowd.db", "partners.db", "learned.db"]
+
+
+def backup_private():
+    """What can't be collected again and isn't prices: email alerts and push subscriptions (alerts.db), the push key
+    (without it every phone's notifications stop), visits, reports, shared prices, shops' requests, barcodes shoppers
+    taught us. One archive a night, readable only by the app, the last 7 kept; the PC fetches the newest too."""
+    import io
+    import os
+    import sqlite3
+    import tarfile
+    import tempfile
+    out = BACKUP / f"private-{datetime.now():%Y-%m-%d}.tar.gz"
+    old_mask = os.umask(0o077)  # created readable by the owner only
+    try:
+        with tarfile.open(out, "w:gz") as tar, tempfile.TemporaryDirectory() as tmp:
+            for name in PRIVATE:
+                src = HERE / "data" / name
+                if not src.exists():
+                    continue
+                copy = Path(tmp) / name
+                s, d = sqlite3.connect(src, timeout=120), sqlite3.connect(copy)
+                s.backup(d)  # a consistent copy while the site writes
+                s.close(), d.close()
+                tar.add(copy, arcname=name)
+            key = HERE / "data" / "push_vapid.pem"
+            if key.exists():
+                tar.add(key, arcname=key.name)
+        os.chmod(out, 0o600)
+        latest = BACKUP / "private-latest.tar.gz"
+        latest.write_bytes(out.read_bytes())
+        os.chmod(latest, 0o600)
+    finally:
+        os.umask(old_mask)
+    for old in sorted(BACKUP.glob("private-2*.tar.gz"))[:-7]:
+        old.unlink()
+    log(f"private backup {out.name} ({out.stat().st_size / 1e3:.0f} kB)")
 
 
 def pc_only_nightly():
@@ -255,6 +295,8 @@ def export_pc_only():
     # and the other way: the newest backup of the full price history, so a copy also lives off the server
     (HERE / "backup").mkdir(exist_ok=True)
     run("scp", *ssh, f"{SERVER}:{REMOTE_BACKUP}/latest.db.gz", str(HERE / "backup" / "phia-latest.db.gz"), check=False)
+    # emails, push subscriptions and the push key: a second copy off the server (backup/ is not in git)
+    run("scp", *ssh, f"{SERVER}:{REMOTE_BACKUP}/private-latest.tar.gz", str(HERE / "backup" / "private-latest.tar.gz"), check=False)
 
 
 def main():

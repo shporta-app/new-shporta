@@ -9,7 +9,7 @@
 
 What we keep (data/alerts.db): the push address the browser gave us (a random address at Google/Mozilla/Apple/
 Microsoft, no name, no email), the ids of the products followed and two prices. An address the push service says is
-gone is deleted. The private key (data/push_vapid.pem) is made on the server the first time and never leaves it.
+gone is deleted. The private key (data/push_vapid.pem) is made on the server the first time; it leaves it only in the owner-only nightly backup (nightly.backup_private).
 
 Standards: RFC 8030 (Web Push), RFC 8291 (message encryption, aes128gcm), RFC 8292 (VAPID). Only `cryptography`
 (already on the server) beyond the standard library.
