@@ -1,6 +1,7 @@
 # full scrape DB (price history) stays on the scraping machine; the API ships seed/phia-api.db.gz
 data/
 seed/phia-api.db
+seed/phia-api.db.new
 # published to the `data` branch by nightly.py, downloaded by Render at build time
 seed/phia-api.db.gz
 logs/

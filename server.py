@@ -1609,6 +1609,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/stats":
                     return self._send(200, data)
                 return self._send(200, stats_page(data).encode(), "text/html; charset=utf-8")
+        except sqlite3.OperationalError:  # the data is busy for a moment, not a wrong request
+            return self._send(503, {"error": "Po përditësojmë të dhënat. Provo përsëri pas pak sekondash."})
         except (ValueError, sqlite3.Error):
             return self._send(400, {"error": "Kërkesë e pavlefshme."})
         except Exception as e:  # never drop the connection without an answer

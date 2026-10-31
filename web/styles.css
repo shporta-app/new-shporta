@@ -1216,3 +1216,13 @@ dialog.guide::backdrop { background: rgba(10, 9, 16, .55); transition: opacity .
   .guide-body.from-right, .guide-body.from-left { animation: none; }
   @starting-style { dialog.guide[open] { transform: none; } }
 }
+
+/* ---------- the header on one row: the name never covered, small phones never two rows ---------- */
+.top .brand { flex-shrink: 0; }
+.top-search { min-width: 0; }
+@media (max-width: 430px) {
+  .top-in { column-gap: 4px; }
+  .top .brand { margin-right: auto; }
+  .top .brand .wm { font-size: 24px; }
+  .top .brand img { width: 30px; height: 30px; }
+}

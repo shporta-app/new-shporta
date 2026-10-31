@@ -122,9 +122,12 @@ def item_history(src, rows, today, current):
 
 def main():
     OUT.parent.mkdir(exist_ok=True)
-    OUT.unlink(missing_ok=True)
+    # built beside the live file and swapped in at the end: the site keeps reading the old data while this runs
+    # (deleting it first left the site without data for minutes every night)
+    work = OUT.with_name(OUT.name + ".new")
+    work.unlink(missing_ok=True)
     src = sqlite3.connect(SRC, timeout=120)
-    dst = sqlite3.connect(OUT)
+    dst = sqlite3.connect(work)
     dst.executescript("""
         CREATE TABLE products (id INTEGER PRIMARY KEY, shop TEXT, title TEXT, brand TEXT, url TEXT, image TEXT,
                                price REAL, regular_price REAL, currency TEXT, in_stock INTEGER,
@@ -298,6 +301,7 @@ def main():
     dst.commit()
     dst.execute("VACUUM")
     dst.close()
+    os.replace(work, OUT)  # one step: a reader sees the old file or the new one, never half
     with open(OUT, "rb") as f, gzip.open(str(OUT) + ".gz", "wb", compresslevel=9) as g:
         shutil.copyfileobj(f, g)
     cats = collections.Counter(i[3] for i in items)
