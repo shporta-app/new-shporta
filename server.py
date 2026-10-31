@@ -731,8 +731,16 @@ def barcode(code):
     return out
 
 
+# per address per minute for the slow requests (a search reads thousands of names); everything else under /api/: 240
+HEAVY = {"/api/search": 60, "/api/suggest": 180, "/api/identify": 30, "/api/barcode": 60, "/api/lookup": 120,
+         "/api/dyqan": 20, "/api/barcode/learn": 20}
+_rate, _rate_lock = {}, threading.Lock()
+_heavy = threading.BoundedSemaphore(6)  # slow requests running at once
+
+
 LEARN_DB = Path(os.environ.get("LEARN_DB", HERE / "data" / "learned.db"))
 _learn_lock = threading.Lock()
+_learn_recent = {}
 
 
 def _learn_con():
@@ -750,7 +758,18 @@ def learn(code, item, ip, ua):
     g = valid_gtin(code)
     if not g or not re.fullmatch(r"[gp][0-9a-f]{12}", item or ""):
         return False
-    visitor = hashlib.sha256(f"{stats._daily_salt(date.today().isoformat())}|{ip}|{ua}".encode()).hexdigest()[:16]
+    if not db().execute(f"SELECT 1 FROM items WHERE id = ? AND {LISTED}", (item,)).fetchone():
+        return False
+    import time as _t
+    now = _t.time()
+    with _learn_lock:
+        hits = [t for t in _learn_recent.get(ip, []) if now - t < 3600]
+        if len(hits) >= 20:
+            return False
+        _learn_recent[ip] = hits + [now]
+        if len(_learn_recent) > 20000:
+            _learn_recent.clear()
+    visitor = stats.person(ip)
     with _learn_lock, _learn_con() as c:
         c.execute("INSERT OR IGNORE INTO learned VALUES (?, ?, ?, ?)", (g, item, visitor, date.today().isoformat()))
     return True
@@ -1401,7 +1420,8 @@ def outbound(pid, item_id, from_page, visitor, count=True, cid=None):
 
 def stats_page(data):
     """The owner's private view of /api/stats (needs ADMIN_TOKEN)."""
-    e = lambda x: str(x).replace("&", "&amp;").replace("<", "&lt;")
+    import html
+    e = lambda x: html.escape(str(x), quote=True)
     kinds = ["visitors", "page", "product", "category", "search", "lookup", "click"]
     names = {"visitors": "Vizitorë", "page": "Faqe të hapura", "product": "Produkte", "category": "Kategori",
              "search": "Kërkime", "lookup": "Shtesa / Ndaj", "click": "Klikime te dyqanet"}
@@ -1463,7 +1483,46 @@ class Handler(BaseHTTPRequestHandler):
         given = self.headers.get("X-Admin-Token") or q.get("token") or ""
         return bool(token) and hmac.compare_digest(given.encode(), token.encode())
 
+    def client_ip(self):
+        return (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+
+    def too_many(self, path):
+        """Requests per address per minute: generous for people, a wall for a script hammering the site."""
+        limit = HEAVY.get(path) or (240 if path.startswith("/api/") else 0)
+        if not limit:
+            return False
+        import time as _t
+        now, key = _t.time(), (self.client_ip(), path if path in HEAVY else "/api/")
+        with _rate_lock:
+            hits = [t for t in _rate.get(key, ()) if now - t < 60]
+            hits.append(now)
+            _rate[key] = hits
+            if len(_rate) > 50000:
+                for k in [k for k, v in _rate.items() if now - v[-1] > 60]:
+                    del _rate[k]
+        return len(hits) > limit
+
+    def _guarded(self, inner):
+        """A limit per address, and at most a few slow requests at once, so a burst can't take the site from everyone."""
+        path = unquote(urlparse(self.path).path)
+        if self.too_many(path):
+            return self._send(429, {"error": "Shumë kërkesa. Provo përsëri pas një minute."})
+        if path not in HEAVY:
+            return inner()
+        if not _heavy.acquire(timeout=8):
+            return self._send(503, {"error": "Shumë kërkesa njëherësh. Provo përsëri pas pak."})
+        try:
+            return inner()
+        finally:
+            _heavy.release()
+
     def do_GET(self):
+        return self._guarded(self._do_GET)
+
+    def do_POST(self):
+        return self._guarded(self._do_POST)
+
+    def _do_GET(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         path = unquote(u.path)
@@ -1591,7 +1650,7 @@ class Handler(BaseHTTPRequestHandler):
             return ("application/xml; charset=utf-8", xml) if xml else None
         return None
 
-    def do_POST(self):
+    def _do_POST(self):
         path = urlparse(self.path).path
         if path == "/njoftim/ndalo":  # Gmail's own "unsubscribe" button (List-Unsubscribe-Post): stop every alert
             alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])

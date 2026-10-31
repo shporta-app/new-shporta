@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "shporta: krahaso çmimet",
   "short_name": "shporta",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "A është ky çmim i mirë? Kur shikon një produkt online, shporta të tregon ku e gjen më lirë në Shqipëri, dhe dupe më të lira.",
   "icons": {
     "16": "icons/icon-16.png",

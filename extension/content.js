@@ -155,7 +155,7 @@
     document.getElementById("shporta-host")?.remove();
     const el = document.createElement("div");
     el.id = "shporta-host";
-    const root = el.attachShadow({ mode: "open" });
+    const root = el.attachShadow({ mode: "closed" });
     const w = node("div", { class: "w" });
     root.append(node("style", { text: STYLE }), w);
     build(w, el);
@@ -279,8 +279,9 @@
       node("h3", { text: `shporta nuk i lexon dot vetë çmimet e ${HOST}` }),
       node("div", { class: "note", text: "Ndaj çmimet e produkteve që hap këtu, që të tjerët t'i krahasojnë? Dërgohet vetëm emri, çmimi, barkodi dhe adresa e produktit, asgjë për ty. E ndryshon kur të duash te butoni i shportës." }),
       node("div", { class: "acts" }, yes, no));
-    yes.onclick = () => chrome.storage.local.set({ share: true }, () => { share = true; lastKey = ""; check(true); });
-    no.onclick = () => chrome.storage.local.set({ share: false }, () => { share = false; box.remove(); });
+    // only a real tap by the person counts, never a click a shop's page script makes
+    yes.onclick = (e) => e.isTrusted && chrome.storage.local.set({ share: true }, () => { share = true; lastKey = ""; check(true); });
+    no.onclick = (e) => e.isTrusted && chrome.storage.local.set({ share: false }, () => { share = false; box.remove(); });
     return box;
   }
 

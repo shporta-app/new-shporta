@@ -26,6 +26,9 @@ HERE = Path(__file__).parent
 DB = Path(os.environ.get("CROWD_DB", HERE / "data" / "crowd.db"))
 PHIA = HERE / "data" / "phia.db"
 PER_VISITOR_DAY = 300
+PER_SHOP_DAY = 3000   # shared observations of one shop a day, everyone together
+# where shops keep their pictures, besides their own address
+IMAGE_CDNS = {"cdn.shopify.com", "i0.wp.com", "i1.wp.com", "i2.wp.com"}
 KEEP_DAYS = 7          # a shared price is shown at most this long after it was seen (build_seed.CROWD_STALE_DAYS)
 _lock = threading.Lock()
 _wanted, _wanted_at = set(), 0.0
@@ -81,17 +84,22 @@ def record(p, ip, ua):
     except (TypeError, ValueError):
         return False
     title = re.sub(r"\s+", " ", str(p.get("title") or "")).strip()[:300]
+    image = str(p.get("image") or "")[:500]
+    host = urlparse(image).netloc.lower()
+    if not (image.startswith("https://") and (host == shop or host.endswith("." + shop) or host in IMAGE_CDNS)):
+        image = ""  # a picture from anywhere else is not the shop's
     cur = str(p.get("currency") or "")[:3].upper()
     # an international shop (zara.com, mango.com): only its Albanian store, in lek
     if not (0 < price < 5_000_000 and 3 <= len(title) and (cur == "ALL" or (cur == "EUR" and shop.endswith(".al")))):
         return False
     import stats  # the same daily code: one person per day, never recognised on another day
-    visitor = hashlib.sha256(f"{stats._daily_salt(date.today().isoformat())}|{ip}|{ua}".encode()).hexdigest()[:16]
+    visitor = stats.person(ip)
     with _lock:
-        key = (date.today().isoformat(), visitor)
-        if _count.get(key, 0) >= PER_VISITOR_DAY:
+        key, shop_key = (date.today().isoformat(), visitor), (date.today().isoformat(), "shop:" + shop)
+        if _count.get(key, 0) >= PER_VISITOR_DAY or _count.get(shop_key, 0) >= PER_SHOP_DAY:
             return False
         _count[key] = _count.get(key, 0) + 1
+        _count[shop_key] = _count.get(shop_key, 0) + 1
         if len(_count) > 50000:
             _count.clear()
         with con() as c:
@@ -99,7 +107,7 @@ def record(p, ip, ua):
                       (datetime.now(timezone.utc).isoformat(timespec="seconds"), shop, url.split("?")[0].split("#")[0],
                        title, price, reg if reg and reg > price else None, cur,
                        re.sub(r"\D", "", str(p.get("gtin") or ""))[:14] or None,
-                       str(p.get("image") or "")[:500] or None, 0 if p.get("in_stock") is False else 1, visitor))
+                       image or None, 0 if p.get("in_stock") is False else 1, visitor))
     return True
 
 
@@ -133,10 +141,10 @@ def merge():
             continue
         if known and known[5] > at:
             continue  # our own collector saw it later
-        if known and abs(price - known[4]) > known[4] * 0.5:
-            people = {s[10] for s in seen if abs(s[4] - price) < 1}
-            if len(people) < 2:  # a big change one person saw: wait for a second one
-                continue
+        # a product we never had, or a change of more than 20%, needs two people (two addresses) who saw that price
+        people = {s[10] for s in seen if abs(s[4] - price) < 1}
+        if (not known or abs(price - known[4]) > known[4] * 0.2) and len(people) < 2:
+            continue
         if known:
             db.execute("""UPDATE products SET price=?, regular_price=?, in_stock=?, currency=?, last_seen=?, via='user',
                           gtin=coalesce(gtin, ?), image=coalesce(image, ?) WHERE id=?""",

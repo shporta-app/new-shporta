@@ -39,8 +39,8 @@ def day_sq(iso):
 
 
 def ld(obj):
-    # "</" inside a JSON string must not close the <script> element
-    return '<script type="application/ld+json">' + json.dumps(obj, ensure_ascii=False).replace("</", "<\\/") + "</script>"
+    # no "<" from a shop's product name ever reaches the page as markup ("</script>", "<!--")
+    return '<script type="application/ld+json">' + json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c") + "</script>"
 
 
 def page_html(title, desc, path, body, robots="index,follow", image=OG_IMAGE, data=(), og_type="website"):

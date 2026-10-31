@@ -107,7 +107,10 @@ def subscribe(sub, items, ip, lookup_item):
     endpoint, p256dh, auth = str(sub.get("endpoint", "")), str(sub["keys"].get("p256dh", "")), str(sub["keys"].get("auth", ""))
     try:
         ok = valid_endpoint(endpoint) and len(unb64u(p256dh)) == 65 and len(unb64u(auth)) == 16
-    except ValueError:
+        if ok:  # a real point on the curve, or encrypting for this device would fail every morning
+            from cryptography.hazmat.primitives.asymmetric import ec
+            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), unb64u(p256dh))
+    except (ValueError, TypeError):
         ok = False
     if not ok:
         return 400, "Ky shfletues nuk na dha një adresë njoftimesh të vlefshme."
@@ -117,6 +120,9 @@ def subscribe(sub, items, ip, lookup_item):
         if len(hits) >= PER_IP_HOUR:
             return 429, "Shumë kërkesa. Provo përsëri pas pak."
         _recent[ip] = hits + [now]
+        if len(_recent) > 20000:  # forget addresses quiet for an hour
+            for k in [k for k, v in _recent.items() if not v or now - v[-1] > 3600]:
+                del _recent[k]
     wanted = {}
     for x in (items if isinstance(items, list) else [])[:PER_DEVICE]:
         iid = str((x or {}).get("id", ""))
@@ -258,11 +264,12 @@ def morning(seed_db, log=print):
         today = now.date().isoformat()
         last = done.read_text().strip() if done.exists() else ""
         if SEND_FROM <= now.hour < SEND_UNTIL and last != today:
-            done.write_text(today)
             try:
                 check(seed_db, log)
             except Exception as e:
                 log(f"push failed: {type(e).__name__}: {e}")
+            finally:
+                done.write_text(today)  # marked after the run: a restart mid-way sends the rest, never twice
         time.sleep(60)
 
 
@@ -290,7 +297,11 @@ def check(seed_db, log=print):
         drops = by_sub.get(s["id"])
         if not drops:
             continue
-        status = send(s, message(drops))
+        try:
+            status = send(s, message(drops))
+        except Exception as e:  # one broken device never stops the notifications of the others
+            log(f"push to {s['id']} failed: {type(e).__name__}")
+            continue
         with con() as c:
             if status in (404, 410):  # the visitor removed the app or turned notifications off in the browser
                 c.execute("DELETE FROM push_items WHERE sub = ?", (s["id"],))

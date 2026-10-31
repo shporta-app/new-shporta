@@ -143,6 +143,9 @@ def subscribe(email, item, ip, lookup_item):
         if len(hits) >= PER_IP_HOUR:
             return 429, "Shumë kërkesa. Provo përsëri pas pak."
         _recent[ip] = hits + [now]
+        if len(_recent) > 20000:  # forget addresses quiet for an hour
+            for k in [k for k, v in _recent.items() if not v or now - v[-1] > 3600]:
+                del _recent[k]
     it = lookup_item(item)
     if not it:
         return 404, "Ky produkt nuk u gjet."

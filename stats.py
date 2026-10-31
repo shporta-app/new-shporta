@@ -30,6 +30,14 @@ _q = queue.Queue(maxsize=10000)
 _salt = {"day": None, "value": None}
 
 
+def person(ip):
+    """Today's code for one network address: counts people for the crowd features (shared prices, reports, barcode
+    votes). The browser's name is left out on purpose, so changing it doesn't make a second person. Daily salt: no
+    address is kept, and tomorrow's code can't be linked to today's."""
+    from datetime import date
+    return hashlib.sha256(f"{_daily_salt(date.today().isoformat())}|{ip}".encode()).hexdigest()[:16]
+
+
 def _daily_salt(today):
     if _salt["day"] != today:
         DB.parent.mkdir(parents=True, exist_ok=True)

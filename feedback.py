@@ -11,6 +11,7 @@ every report on the private statistics page. Kept: the day, the product, the lis
 the same daily visitor code as stats.py (no address, no cookie).
 """
 import collections
+import re
 import hashlib
 import os
 import sqlite3
@@ -37,7 +38,7 @@ def con():
 
 def record(kind, item, offer, note, ip, ua):
     """(status, message)"""
-    if kind not in KINDS or not item or len(item) > 20:
+    if kind not in KINDS or not re.fullmatch(r"[gp][0-9a-f]{12}", item or ""):
         return 400, "Zgjidh çfarë nuk shkon."
     now = time.time()
     with _lock:
@@ -45,8 +46,11 @@ def record(kind, item, offer, note, ip, ua):
         if len(hits) >= PER_IP_HOUR:
             return 429, "Shumë raportime. Provo përsëri pas pak."
         _recent[ip] = hits + [now]
+        if len(_recent) > 20000:  # forget addresses quiet for an hour
+            for k in [k for k, v in _recent.items() if not v or now - v[-1] > 3600]:
+                del _recent[k]
     import stats  # the same daily code: counted once per person per day, never recognised on another day
-    visitor = hashlib.sha256(f"{stats._daily_salt(date.today().isoformat())}|{ip}|{ua}".encode()).hexdigest()[:16]
+    visitor = stats.person(ip)
     with _lock, con() as c:
         c.execute("INSERT INTO reports (day, item, offer, kind, note, visitor) VALUES (?,?,?,?,?,?)",
                   (date.today().isoformat(), item, offer, kind, (note or "")[:300], visitor))
@@ -58,9 +62,9 @@ def excluded():
     if not DB.exists():
         return set()
     with con() as c:
-        rows = c.execute("""SELECT offer, COUNT(DISTINCT visitor || day) FROM reports
+        rows = c.execute("""SELECT offer, COUNT(DISTINCT visitor || day), COUNT(DISTINCT day) FROM reports
                             WHERE kind IN ('tjeter-produkt', 'madhesi') AND offer IS NOT NULL GROUP BY offer""").fetchall()
-    return {o for o, n in rows if n >= NEEDED}
+    return {o for o, n, days in rows if n >= NEEDED and days >= 2}  # one person can't do it in an afternoon
 
 
 def summary(days=30):

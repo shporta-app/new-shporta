@@ -90,7 +90,7 @@ def check(srv, domain):
     above = [(m[2] - m[4]) / m[4] for m in mine if m[2] > m[4]]
     worst = sorted((m for m in mine if m[2] > m[4]), key=lambda m: (m[2] - m[4]) / m[4], reverse=True)[:3]
     out = {"domain": d, "listed": True, "compared": len(mine), "cheapest": cheapest, "dearest": dearest,
-           "above_pct": round(100 * sum(above) / len(above)) if above else 0, "clicks30": clicks(d),
+           "above_pct": round(100 * sum(above) / len(above)) if above else 0, "clicks30": 0,  # a shop's own visitors are told to that shop, not shown to everyone
            "examples": [{"item": m[0], "title": m[1], "price": m[2], "lowest": m[4]} for m in worst]}
     _cache[d] = (time.time(), out)
     if len(_cache) > 2000:
@@ -115,8 +115,11 @@ def request(data, ip, ua):
         if len(hits) >= PER_IP_HOUR:
             return 429, "Shumë kërkesa. Provo përsëri pas pak."
         _recent[ip] = hits + [now]
+        if len(_recent) > 20000:  # forget addresses quiet for an hour
+            for k in [k for k, v in _recent.items() if not v or now - v[-1] > 3600]:
+                del _recent[k]
     import stats
-    visitor = hashlib.sha256(f"{stats._daily_salt(date.today().isoformat())}|{ip}|{ua}".encode()).hexdigest()[:16]
+    visitor = stats.person(ip)
     with _lock, con() as c:
         c.execute("INSERT INTO requests (at, shop, site, email, phone, wants, feed, note, visitor) VALUES (?,?,?,?,?,?,?,?,?)",
                   (datetime.now(timezone.utc).isoformat(timespec="seconds"), str(data.get("shop") or "")[:120], site, email,
