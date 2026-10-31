@@ -257,6 +257,20 @@ def main():
         sku = (sku or "").strip()
         for g in {valid_gtin(code), valid_gtin(sku) if re.fullmatch(r"\d{12,14}", sku) else None} - {None}:
             codes.add((g, item_of_pid[pid]))
+    # barcodes.py: the barcode a product's own page prints, and one found by name and size in Open Beauty Facts
+    tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "page_gtins" in tables:
+        page_code = dict(src.execute("SELECT url, gtin FROM page_gtins WHERE gtin IS NOT NULL"))
+        for r in rows:
+            if r[4] in page_code and r[14] in kept:
+                codes.add((page_code[r[4]], r[14]))
+    if "found_gtins" in tables:
+        by_key = collections.defaultdict(set)
+        for r in rows:
+            if r[16] and r[14] in kept and r[11] is not None:
+                by_key[(r[10], r[11], r[12])].add(r[14])
+        for key, val, unit, g in src.execute("SELECT name_key, size_val, size_unit, gtin FROM found_gtins WHERE gtin IS NOT NULL"):
+            codes |= {(g, item) for item in by_key.get((key, val, unit), ())}
     per_code = collections.Counter(g for g, _ in codes)
     codes = {(g, i) for g, i in codes if per_code[g] <= 2}
     dst.execute("CREATE TABLE barcodes (gtin TEXT, item TEXT, PRIMARY KEY (gtin, item))")

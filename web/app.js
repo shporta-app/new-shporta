@@ -1820,12 +1820,24 @@ async function pageScan() {
       <div class="grid">${d.items.map(tile).join("")}</div>`);
   const show = (d, head, what = "") => d.sure && d.items.length ? (d.size_missing ? otherSize(d, head) : answer(d.items, head)) : unsure(d, what);
 
+  // a barcode we didn't know: the product the shopper then picks from the list teaches it to us (two people = known)
+  let teach = null;
+  result.addEventListener("click", (e) => {
+    const a = e.target.closest('a[href^="/produkt/"]');
+    if (!a || !teach) return;
+    const body = JSON.stringify({ code: teach, item: a.getAttribute("href").split("/")[2] });
+    navigator.sendBeacon?.("/api/barcode/learn", new Blob([body], { type: "application/json" })) ||
+      fetch("/api/barcode/learn", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    teach = null;
+  });
   const byCode = async (code) => {
+    teach = null;
     busy(`Barkodi ${esc(code)}: po kërkojmë…`);
     const d = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
     if (!d) return say(`<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`);
     if (d.valid === false) return say(`<div class="empty"><b>Ky numër nuk është barkod i plotë.</b>Kontrollo shifrat dhe provo përsëri.</div>`);
-    if (d.how === "barcode" && d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`);
+    if ((d.how === "barcode" || d.how === "learned") && d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`);
+    teach = code;
     if (d.name) return show({ ...d, words: d.name.split(/\s+/).slice(0, 6) }, esc(d.name),
       `Sipas barkodit (${esc(d.source || "")}) është <i>${esc(d.name)}</i>. `);
     say(`<div class="scan-unsure"><b>Këtë barkod nuk e njohim ende.</b>

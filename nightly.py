@@ -109,6 +109,7 @@ def server_nightly():
     log("server nightly start")
     merge_inbox()  # yesterday's PC-only shops first, so they're in this build too
     run(sys.executable, "sizes.py", check=False)  # sizes shops state on the product's page, not in its name
+    run(sys.executable, "barcodes.py", check=False)  # a barcode for every compared product (Skano)
     run(sys.executable, "refresh.py", "--skip", *PC_ONLY, check=False)
     # shops a vetting pass approved since the last run (shops_new_vetted.json, verdict "ok"): their first collection
     run(sys.executable, "add_shops.py", check=False)

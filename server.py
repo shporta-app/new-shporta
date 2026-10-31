@@ -15,6 +15,7 @@ Standard library only. All lookups are SQL against a read-only file, so memory s
 import ast
 import collections
 import gzip
+import hashlib
 import hmac
 import json
 import math
@@ -704,6 +705,12 @@ def barcode(code):
     out = {"code": g.lstrip("0"), "valid": True, "items": items, "how": "barcode"}
     if items:
         return out
+    # a barcode shoppers taught us: two different people scanned it and picked the same product
+    taught = learned(g)
+    if taught:
+        items = item_rows(f"SELECT {ITEM_COLS} FROM items WHERE {LISTED} AND id IN ({','.join('?' * len(taught))})", taught)
+        if items:
+            return out | {"items": items, "how": "learned"}
     rec = obf_product(g)
     source = "Open Beauty Facts"
     if not rec:
@@ -717,6 +724,42 @@ def barcode(code):
         out.update(how="name", sure=m["sure"], items=m["items"], maybe=m["maybe"], size_missing=m["size_missing"],
                    size_ok=not m["size_missing"])
     return out
+
+
+LEARN_DB = Path(os.environ.get("LEARN_DB", HERE / "data" / "learned.db"))
+_learn_lock = threading.Lock()
+
+
+def _learn_con():
+    LEARN_DB.parent.mkdir(parents=True, exist_ok=True)
+    c = sqlite3.connect(LEARN_DB, timeout=30)
+    c.execute("CREATE TABLE IF NOT EXISTS learned (gtin TEXT, item TEXT, visitor TEXT, day TEXT, PRIMARY KEY (gtin, item, visitor))")
+    return c
+
+
+def learn(code, item, ip, ua):
+    """A shopper scanned a barcode we didn't know and picked this product from the list: one vote for code -> item.
+    Kept: the barcode, the product, the same daily visitor code as stats.py (no address, no cookie)."""
+    from match import valid_gtin
+    from datetime import date
+    g = valid_gtin(code)
+    if not g or not re.fullmatch(r"[gp][0-9a-f]{12}", item or ""):
+        return False
+    visitor = hashlib.sha256(f"{stats._daily_salt(date.today().isoformat())}|{ip}|{ua}".encode()).hexdigest()[:16]
+    with _learn_lock, _learn_con() as c:
+        c.execute("INSERT OR IGNORE INTO learned VALUES (?, ?, ?, ?)", (g, item, visitor, date.today().isoformat()))
+    return True
+
+
+def learned(g):
+    """Products two or more different shoppers picked for this barcode (and nobody picked anything else as often)."""
+    if not LEARN_DB.exists():
+        return []
+    with _learn_con() as c:
+        votes = c.execute("SELECT item, COUNT(DISTINCT visitor) n FROM learned WHERE gtin = ? GROUP BY item ORDER BY n DESC", (g,)).fetchall()
+    if not votes or votes[0][1] < 2 or (len(votes) > 1 and votes[1][1] >= votes[0][1]):
+        return []
+    return [votes[0][0]]
 
 
 _upc, _upc_lock = {}, threading.Lock()
@@ -1501,7 +1544,7 @@ class Handler(BaseHTTPRequestHandler):
             alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])
             return self._send(200, {"ok": True})
         if path not in ("/api/lookup", "/api/alert", "/api/feedback", "/api/push/subscribe", "/api/push/unsubscribe", "/api/push/test",
-                        "/api/dyqan"):
+                        "/api/dyqan", "/api/barcode/learn"):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -1510,6 +1553,10 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(n) or b"{}")
             if not isinstance(data, dict):
                 raise ValueError("expected an object")
+            if path == "/api/barcode/learn":  # Skano: the product a shopper picked for a barcode we didn't know
+                ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+                return self._send(200, {"ok": learn(str(data.get("code", ""))[:20], str(data.get("item", ""))[:20], ip,
+                                                    self.headers.get("User-Agent", ""))})
             if path == "/api/dyqan":  # a shop asks to be listed, sends its catalogue, wants the report or to leave
                 ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
                 code, msg = partners.request(data, ip, self.headers.get("User-Agent", ""))
