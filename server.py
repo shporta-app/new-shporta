@@ -704,18 +704,181 @@ def barcode(code):
     if items:
         return out
     rec = obf_product(g)
+    source = "Open Beauty Facts"
+    if not rec:
+        rec, source = upc_product(g), "UPCitemdb"
     if rec:
         brand = (rec.get("brands") or "").split(",")[0].strip()
-        out["name"] = " ".join(x for x in (brand, rec.get("product_name_en") or rec.get("product_name"), rec.get("quantity")) if x)
-        for name in dict.fromkeys(x for x in (rec.get("product_name_en"), rec.get("product_name"), rec.get("product_name_fr")) if x):
-            m = name_match(brand, name, rec.get("quantity") or "")
-            if m:
-                out.update(items=m["items"], how="name", size_ok=m["size_ok"], source="Open Beauty Facts")
-                break
+        names = [x for x in (rec.get("product_name_en"), rec.get("product_name"), rec.get("product_name_fr")) if x]
+        out["name"] = " ".join(x for x in (brand, names[0] if names else "", rec.get("quantity")) if x)
+        out["source"] = source
+        m = match_text(" ".join(names[:2] + [rec.get("quantity") or ""]), brand)
+        out.update(how="name", sure=m["sure"], items=m["items"], maybe=m["maybe"], size_missing=m["size_missing"],
+                   size_ok=not m["size_missing"])
     return out
 
 
+_upc, _upc_lock = {}, threading.Lock()
+
+
+def upc_product(gtin):
+    """A barcode's brand and name from UPCitemdb's free lookup, when Open Beauty Facts doesn't know it. Remembered
+    for a day. Only the barcode is sent."""
+    import time
+    import urllib.request
+    code = gtin.lstrip("0") if len(gtin.lstrip("0")) >= 12 else gtin[-13:]
+    with _upc_lock:
+        hit = _upc.get(code)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
+    out = None
+    try:
+        req = urllib.request.Request(f"https://api.upcitemdb.com/prod/trial/lookup?upc={code}",
+                                     headers={"User-Agent": "shporta.app/1.0 (+https://shporta.app)", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        it = (d.get("items") or [None])[0]
+        if it and it.get("title"):
+            out = {"brands": it.get("brand") or "", "product_name": it["title"], "quantity": it.get("size") or ""}
+    except Exception:
+        return None
+    with _upc_lock:
+        if len(_upc) > 5000:
+            _upc.clear()
+        _upc[code] = (time.time(), out)
+    return out
+
+
+_df = None
+
+
+def title_df():
+    """How many listed products use each word in their name: a rare word ("mucin", "effaclar") says more."""
+    global _df
+    if _df is None:
+        n = collections.Counter()
+        for (t,) in db().execute(f"SELECT title FROM items WHERE {LISTED}"):
+            n.update(set(re.findall(r"[a-z0-9]+", fold(t))))
+        _df = n
+    return _df
+
+
+def name_words(title):
+    """The words that name a product, without its size or packaging numbers."""
+    from match import SIZE_RE
+    t = SIZE_RE.sub(" ", fold(title))
+    return [w for w in re.findall(r"[a-z0-9]+", t) if not w.isdigit() and w not in LABEL_WORDS and w not in SIZE_LABELS
+            and len(w) >= 2]
+
+
+# the words shops put before a size ("Sasia: 50ml", "vellimi: 236ml", "Format: 100 ml"): not part of the name
+SIZE_LABELS = {"sasia", "sasi", "vellimi", "volumi", "format", "formati", "madhesia", "pesha", "size", "volume", "ml", "gr", "oz",
+               "fl", "pcs", "cope", "x"}
+
+
+def match_text(text, brand_hint=""):
+    """What is written on a package (the phone's OCR, or a barcode record's brand + name + size) -> our product.
+    Every candidate is scored: the rare words of its name that are on the package count for it, the words of its
+    name that are not there count against it. sure: the brand and most of the name match, clearly better than the
+    next product. size: the size printed on the package picks among the sizes; a size we don't have is said so,
+    never shown as the same product. maybe: the closest products when we're not sure, labelled as such."""
+    import difflib
+    from match import SIZE_RE, size_of
+    df, brands = title_df(), brand_words()
+    N = max(1, len(df))
+    idf = lambda w: math.log(N / (1 + df.get(w, 0)))
+    raw = re.findall(r"[a-z0-9]+", fold(f"{brand_hint} {text}"))
+    # OCR splits a word ("Cera Ve", "La Roche Posay" fine, "Neutro gena"): two neighbours that make a known word are one
+    raw += [a + b for a, b in zip(raw, raw[1:]) if a + b in df and len(a + b) >= 5 and (a not in df or b not in df or a + b in brands)]
+    # and misreads letters: l/1 for i, 0 for o, rn for m
+    fix = lambda w: w if w in df else next((v for v in (w.replace("l", "i"), w.replace("1", "i"), w.replace("0", "o"),
+                                                         w.replace("rn", "m")) if v in df), w)
+    raw = [fix(w) for w in raw]
+    seen = set()
+    for w in raw:
+        if len(w) < 3 or w.isdigit():
+            seen.add(w)
+            continue
+        if w in df:
+            seen.add(w)
+        else:  # OCR misreads a letter or two ("CeraVc", "Niacinamlde"): the closest word our names use
+            close = difflib.get_close_matches(w, [v for v in df if v[:1] == w[:1] and abs(len(v) - len(w)) <= 2], 1, 0.8)
+            seen.add(close[0] if close else w)
+    # words printed on most packages ("made in Korea", "for all skin types") are never the brand
+    common = LABEL_WORDS | {"made", "for", "in", "by", "of", "korea", "france", "italy", "germany", "usa", "new", "paris",
+                            "tested", "dermatologically", "free", "natural", "organic", "professional", "care"}
+    found_brands = [w for w in dict.fromkeys(raw) if w in brands and w not in common] or [w for w in seen if w in brands and w not in common]
+    # candidates: every product of the brand(s) on the package; with no brand, the products with its rarest words
+    keys = found_brands[:3] or sorted((w for w in seen if w in df and len(w) >= 4), key=idf, reverse=True)[:3]
+    cand = {}
+    for k in keys:
+        for it in search_items([k], 800)[1]:
+            cand[it["id"]] = it
+    if not cand:
+        return {"items": [], "sure": False, "maybe": [], "words": [w for w in raw if w in df][:6], "brand": None}
+    scored = []
+    for it in cand.values():
+        words = set(name_words(it["title"]))
+        if not words:
+            continue
+        hit = sum(idf(w) for w in words if w in seen)
+        miss = sum(idf(w) for w in words if w not in seen)
+        scored.append((hit - 0.8 * miss, hit / (hit + miss or 1), it, words))
+    scored.sort(key=lambda s: (-s[0], -s[2]["shops"]))
+    if not scored:
+        return {"items": [], "sure": False, "maybe": [], "words": [], "brand": None}
+    # the same product in its sizes is one answer: group by the name without the size
+    # (also when two shops spell it differently: "Moisturizing" and "Moisturising" Cream is one product)
+    import difflib as _dl
+    unit = {"ml", "g", "gr", "kg", "l", "oz", "sasia", "vellimi", "format"}
+    def alike(a, b):
+        a, b = a - unit, b - unit
+        if a == b:
+            return True
+        left = [w for w in a if w not in b]
+        right = [w for w in b if w not in a]
+        return len(left) == len(right) <= 2 and all(_dl.SequenceMatcher(None, x, y).ratio() >= 0.8 for x, y in zip(sorted(left), sorted(right)))
+    best = scored[0]
+    group = [s for s in scored if alike(s[3], best[3])]
+    rest = [s for s in scored if s not in group]
+    brand_ok = not found_brands or any(b in best[3] for b in found_brands)
+    named = [w for w in best[3] if w in seen and w not in brands]
+    margin = best[0] - (rest[0][0] if rest else -99)
+    # a refill, a set, a travel size or a tester is another product: the package and the name must agree on it
+    variant = {"refill", "recharge", "ricarica", "set", "kit", "mini", "travel", "tester", "sample", "duo", "trio", "coffret", "gift"}
+    same_variant = (variant & seen) == (variant & best[3])
+    sure = brand_ok and best[1] >= 0.7 and len(named) >= 2 and margin >= 1.5 and same_variant
+    items = [s[2] for s in group][:6]
+    sizes = {size_of(m) for m in SIZE_RE.finditer(fold(text))}
+    # a cream is 340 g on the jar and "340 ml" at a shop: the same number in g and ml is the same size here
+    # and "3.38 fl.oz" (US packages print both) is 100 ml
+    def same(a, b):
+        if a == b or (a[0] == b[0] and {a[1], b[1]} <= {"g", "ml"}):
+            return True
+        ml = lambda z: z[0] * 29.57 if z[1] == "oz" else z[0] if z[1] in ("ml", "g") else None
+        x, y = ml(a), ml(b)
+        return bool(x and y and "oz" in (a[1], b[1]) and abs(x - y) <= 0.04 * max(x, y))
+    size_missing = False
+    if sizes:
+        sized = [it for it in items if (m := SIZE_RE.search(fold(it.get("size") or it["title"])))
+                 and any(same(size_of(m), z) for z in sizes)]
+        if sized:
+            items = sized
+        elif sure:
+            size_missing = True  # the right product, but not in the size on the package: shown as other sizes
+    maybe = [] if sure else [s[2] for s in scored[:12] if s[1] >= 0.4][:6]
+    return {"items": items if sure else [], "sure": sure, "size_missing": size_missing, "maybe": maybe,
+            "words": [w for w in dict.fromkeys(raw) if w in df and w in best[3]][:6] or [w for w in raw if w in df][:6],
+            "brand": found_brands[0] if found_brands else None,
+            "printed_size": size_label(*sorted(sizes, key=lambda z: z[1] == "oz")[0]) if sizes else None}
+
+
 def identify(text):
+    """"Skano" with a photo of the label: the phone reads the text (OCR), match_text finds the product."""
+    return match_text(text)
+
+
+def identify_old(text):
     """"Skano" with a photo of the label: the phone reads the text (OCR, on the phone), we keep the words our product
     names use, rarest first (a brand or line name says more than "cream"), and search with fewer words until
     something is found. OCR misreads letters, so each word also gets the typo correction."""

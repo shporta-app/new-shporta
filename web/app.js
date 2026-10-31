@@ -1727,6 +1727,25 @@ const loadScript = (src) => new Promise((ok, fail) => {
 });
 let scanStop = null;  // stops the camera when leaving the page
 
+// The phone's own barcode reader counts only when it really reads EAN/UPC codes: on some browsers it exists but
+// reads nothing, and the scan waited forever.
+let _native;
+async function nativeReader() {
+  if (_native !== undefined) return _native;
+  try { _native = "BarcodeDetector" in window && (await BarcodeDetector.getSupportedFormats()).includes("ean_13"); }
+  catch { _native = false; }
+  return _native;
+}
+// a photo at most `max` pixels on its long side, on a canvas (a 12 MP photo is many times slower to read)
+async function shrink(file, max) {
+  const img = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(file));
+  const k = Math.min(1, max / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
 async function pageScan() {
   document.title = "Skano një produkt | shporta";
   const icoCode = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>`;
@@ -1768,20 +1787,32 @@ async function pageScan() {
     say(`<h2 class="sub">${head}</h2><p class="note">Zgjidh madhësinë që ke në dorë.</p>
       <div class="grid">${items.map(tile).join("")}</div>${foot}`);
   };
-  const unsure = (d) => say(`<div class="scan-unsure"><b>Nuk jemi të sigurt cili produkt është.</b>
-      <p>${d.words && d.words.length ? `Lexuam: <i>${esc(d.words.join(" "))}</i>. ` : ""}Fotografo emrin nga afër, me dritë, ose kërko vetë:</p>
-      <form class="scan-code" data-search><input name="q" value="${esc((d.words || []).join(" "))}" aria-label="Kërko produktin">
-        <button class="btn" type="submit">Kërko</button></form></div>`);
+  const searchBox = (q) => `<form class="scan-code" data-search><input name="q" value="${esc(q)}" aria-label="Kërko produktin">
+        <button class="btn" type="submit">Kërko</button></form>`;
+  const unsure = (d, what = "") => {
+    const q = (d.words || []).join(" ");
+    if (d.maybe && d.maybe.length) return say(`<div class="scan-unsure"><b>Mund të jetë njëri nga këto.</b>
+      <p>${what}Zgjidh atë që ke në dorë, ose kërko vetë.</p></div>
+      <div class="grid">${d.maybe.map(tile).join("")}</div>${searchBox(q)}`);
+    say(`<div class="scan-unsure"><b>Nuk e gjetëm këtë produkt te dyqanet që krahasojmë.</b>
+      <p>${what}${q ? `Lexuam: <i>${esc(q)}</i>. ` : ""}Mund ta kërkosh vetë, ose fotografo emrin nga afër, me dritë.</p>${searchBox(q)}${photoBtn}</div>`);
+  };
+  // the product is the right one; the size on the package is one we don't compare: say so, show the sizes we have
+  const otherSize = (d, head) => say(`<h2 class="sub">${head}</h2>
+      <p class="size-warn">E gjetëm produktin, por jo në madhësinë ${esc(d.printed_size || "që ke në dorë")}. Këto janë madhësitë që krahasojmë:</p>
+      <div class="grid">${d.items.map(tile).join("")}</div>`);
+  const show = (d, head, what = "") => d.sure && d.items.length ? (d.size_missing ? otherSize(d, head) : answer(d.items, head)) : unsure(d, what);
 
   const byCode = async (code) => {
     busy(`Barkodi ${esc(code)}: po kërkojmë…`);
     const d = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
     if (!d) return say(`<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`);
     if (d.valid === false) return say(`<div class="empty"><b>Ky numër nuk është barkod i plotë.</b>Kontrollo shifrat dhe provo përsëri.</div>`);
-    if (d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`,
-      d.source ? `<p class="note">Emri i produktit sipas barkodit: ${esc(d.name)} (Open Beauty Facts).${d.size_ok ? "" : " Madhësinë kontrolloje vetë."}</p>` : "");
-    say(`<div class="scan-unsure"><b>Ky barkod nuk është te dyqanet që krahasojmë.</b>
-      <p>${d.name ? `Sipas barkodit është <i>${esc(d.name)}</i>, por nuk e gjejmë saktësisht te dyqanet online. ` : "Pak dyqane e shkruajnë barkodin. "}Provo një foto të pjesës së përparme.</p>
+    if (d.how === "barcode" && d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`);
+    if (d.name) return show({ ...d, words: d.name.split(/\s+/).slice(0, 6) }, esc(d.name),
+      `Sipas barkodit (${esc(d.source || "")}) është <i>${esc(d.name)}</i>. `);
+    say(`<div class="scan-unsure"><b>Këtë barkod nuk e njohim ende.</b>
+      <p>Asnjë dyqan që krahasojmë nuk e publikon dhe nuk e gjetëm në bazat e hapura të produkteve. Bëj një foto të pjesës së përparme, ku duket emri:</p>
       ${photoBtn}</div>`);
   };
 
@@ -1794,7 +1825,9 @@ async function pageScan() {
     if (code !== last) { last = code; return; }
     stop(); navigator.vibrate?.(60); byCode(code);
   };
+  let hint = null;
   const stop = () => {
+    clearTimeout(hint); hint = null;
     clearInterval(timer); timer = null; last = null;
     if (zx) { zx.reset(); zx = null; }
     if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
@@ -1809,7 +1842,7 @@ async function pageScan() {
     stage.scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "center" });
     const v = document.getElementById("scan-video");
     try {
-      if ("BarcodeDetector" in window) {
+      if (await nativeReader()) {
         stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
         v.srcObject = stream;
         await v.play();
@@ -1819,11 +1852,19 @@ async function pageScan() {
         await loadScript(ZXING);
         const hints = new Map([[ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
           ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E]], [ZXing.DecodeHintType.TRY_HARDER, true]]);
-        zx = new ZXing.BrowserMultiFormatReader(hints, 150);
-        zx.decodeFromConstraints({ video }, v, (r) => { if (r) seen(r.getText()); });
+        zx = new ZXing.BrowserMultiFormatReader(hints, 120);
+        await zx.decodeFromConstraints({ video: { ...video, width: { ideal: 1280 }, height: { ideal: 720 } } }, v, (r) => { if (r) seen(r.getText()); });
       }
       stage.classList.add("live");
       status.textContent = "Mbaje barkodin brenda kornizës, 10–15 cm larg.";
+      // nothing read after a while: say what helps, and the other ways, while the camera keeps trying
+      hint = setTimeout(() => {
+        if (!stage.classList.contains("live")) return;
+        status.textContent = "Nuk po e lexojmë? Afroje ose largoje pak, me dritë, pa shkëlqim.";
+        result.innerHTML = (`<p class="note scan-help">Barkodi nuk po lexohet? <button type="button" class="linkish" id="scan-typeit">Shkruaj numrin</button>
+          ose <label class="linkish">bëj një foto<input type="file" accept="image/*" capture="environment" hidden data-photo></label>.</p>`);
+        document.getElementById("scan-typeit").onclick = () => { stop(); const t = main.querySelector(".scan-type"); t.open = true; document.getElementById("scan-digits").focus(); };
+      }, 8000);
     } catch {
       stop();
       say(`<div class="scan-unsure"><b>Kamera nuk u hap.</b><p>Lejo kamerën te cilësimet e shfletuesit, ose bëj një foto.</p>${photoBtn}</div>`);
@@ -1839,35 +1880,49 @@ async function pageScan() {
   // a photo: its barcode first (exact), else the words on the package
   const photo = async (file) => {
     stop();
-    busy("Duke lexuar foton në telefon… (herën e parë zgjat pak)");
+    busy("Po e përgatisim foton…");
     try {
+      const canvas = await shrink(file, 1600);
       let code = null;
-      if ("BarcodeDetector" in window) {
-        const c = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(await createImageBitmap(file)).catch(() => []);
-        code = c[0]?.rawValue || null;
-      } else {
+      if (await nativeReader()) {
+        const c = await new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }).detect(canvas).catch(() => []);
+        code = c.map((x) => x.rawValue).find((x) => /^\d{8,14}$/.test(x) && checkDigit(x)) || null;
+      }
+      if (!code) {
+        busy("Po kërkojmë barkodin në foto…");
         await loadScript(ZXING).catch(() => {});
         if (window.ZXing) {
-          const url = URL.createObjectURL(file);
-          const r = await new ZXing.BrowserMultiFormatReader(new Map([[ZXing.DecodeHintType.TRY_HARDER, true]])).decodeFromImageUrl(url).catch(() => null);
-          URL.revokeObjectURL(url);
-          code = r ? r.getText() : null;
+          const reader = new ZXing.MultiFormatReader();
+          reader.setHints(new Map([[ZXing.DecodeHintType.TRY_HARDER, true], [ZXing.DecodeHintType.POSSIBLE_FORMATS,
+            [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E]]]));
+          for (const c of [canvas, await shrink(file, 900), await shrink(file, 2400)]) {  // a big barcode reads better smaller, a small one bigger
+            try {
+              const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(c)));
+              const r = reader.decode(bmp);
+              if (r && checkDigit(r.getText())) { code = r.getText(); break; }
+            } catch {}
+          }
         }
       }
-      if (code && checkDigit(code)) {
-        const d = await api(`/api/barcode?code=${encodeURIComponent(code)}`).catch(() => null);
-        if (d && d.items.length) return answer(d.items, `Barkodi ${esc(d.code)}`);
-        busy(`Barkodi ${esc(code)} nuk është te dyqanet tona. Po lexojmë emrin në foto…`);
+      if (code) {
+        navigator.vibrate?.(60);
+        return byCode(code);
       }
+      busy("Po lexojmë emrin në foto… 0%");
       await loadScript(TESSERACT);
-      const { data } = await Tesseract.recognize(file, "eng");
+      const ocr = Tesseract.recognize(canvas, "eng", { logger: (m) => {
+        if (m.status === "recognizing text") busy(`Po lexojmë emrin në foto… ${Math.round(m.progress * 100)}%`);
+        else if (/load/.test(m.status)) busy("Po përgatisim leximin (vetëm herën e parë)…");
+      } });
+      const { data } = await Promise.race([ocr, new Promise((_, no) => setTimeout(() => no(new Error("koha")), 60000))]);
       const text = data.text.replace(/\s+/g, " ").trim();
       if (!text) return say(`<div class="scan-unsure"><b>Nuk lexuam dot asnjë fjalë.</b><p>Fotografo emrin e produktit nga afër, me dritë.</p>${photoBtn}</div>`);
+      busy("Po e kërkojmë te dyqanet…");
       const d = await api(`/api/identify?text=${encodeURIComponent(text.slice(0, 600))}`).catch(() => null);
-      if (d && d.sure && d.items.length) return answer(d.items, `Lexuam: ${esc(d.words.join(" "))}`);
-      unsure(d || {});
+      if (!d) return say(`<div class="empty"><b>Nuk u lidhëm dot.</b>Provo përsëri.</div>`);
+      show(d, `Lexuam: ${esc(d.words.join(" "))}`);
     } catch {
-      say(`<div class="scan-unsure"><b>Nuk e lexuam dot foton.</b><p>Provo përsëri ose kërko me emër.</p>${photoBtn}</div>`);
+      say(`<div class="scan-unsure"><b>Nuk e lexuam dot foton.</b><p>Provo përsëri, me dritë dhe nga afër, ose kërko me emër.</p>${photoBtn}</div>`);
     }
   };
   main.querySelector(".scan").addEventListener("change", (e) => {

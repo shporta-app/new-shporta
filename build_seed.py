@@ -248,10 +248,17 @@ def main():
     # barcodes -> products, for "Skano" (scan a barcode in a shop or at home and see every shop's price)
     item_of_pid = {r[0]: r[14] for r in rows}
     codes = set()
-    for pid, code in src.execute("SELECT id, gtin FROM products WHERE gtin IS NOT NULL AND gtin != ''"):
-        g = valid_gtin(code)
-        if g and item_of_pid.get(pid) in kept:
+    # the barcode a shop publishes, or the one many shops keep as their product code (SKU): 12-14 digits with a
+    # correct check digit is an EAN/UPC, not an internal code. A code that lands on more than two different
+    # products is someone's internal numbering after all, and is dropped.
+    for pid, code, sku in src.execute("SELECT id, gtin, sku FROM products WHERE (gtin IS NOT NULL AND gtin != '') OR (sku IS NOT NULL AND sku != '')"):
+        if item_of_pid.get(pid) not in kept:
+            continue
+        sku = (sku or "").strip()
+        for g in {valid_gtin(code), valid_gtin(sku) if re.fullmatch(r"\d{12,14}", sku) else None} - {None}:
             codes.add((g, item_of_pid[pid]))
+    per_code = collections.Counter(g for g, _ in codes)
+    codes = {(g, i) for g, i in codes if per_code[g] <= 2}
     dst.execute("CREATE TABLE barcodes (gtin TEXT, item TEXT, PRIMARY KEY (gtin, item))")
     dst.executemany("INSERT INTO barcodes VALUES (?,?)", codes)
     dst.execute("CREATE TABLE item_history (id TEXT PRIMARY KEY, h TEXT)")
