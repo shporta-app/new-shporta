@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS prices (
 );
 CREATE INDEX IF NOT EXISTS products_gtin ON products(gtin);
 CREATE TABLE IF NOT EXISTS page_sizes (url TEXT PRIMARY KEY, size TEXT, checked TEXT);
+-- seconds between requests for a shop that once said 429 at our pace: it only grows, so it doesn't have to say it again
+CREATE TABLE IF NOT EXISTS pace (domain TEXT PRIMARY KEY, delay REAL);
 """
 
 
@@ -464,6 +466,16 @@ def db():
     return con
 
 
+def unmangle(s):
+    """A name a shop saved with the wrong encoding ("Dâ€™Alba" for "D’Alba", "kremÃ«" for "kremë"), repaired."""
+    if re.search(r"â€|Ã.|Â", s):
+        try:
+            return s.encode("cp1252").decode("utf-8")
+        except UnicodeError:
+            pass
+    return s
+
+
 def save(con, shop, rows, batch=200):
     """Buffer rows and write them in short transactions, so the write lock is never held while pages are
     being fetched (several scrapers share the DB)."""
@@ -472,6 +484,7 @@ def save(con, shop, rows, batch=200):
     for r in rows:
         if not r.get("title") or not r.get("price"):
             continue
+        r["title"] = unmangle(r["title"])
         buf.append(r)
         if len(buf) >= batch:
             n += _write(con, shop, buf)
@@ -532,6 +545,7 @@ def run(domain, category, platform=None, max_pages=3000):
         return record(domain, category, None, "down", type(err).__name__, 0)
     c = Client(base)
     con = db()
+    c.delay = max(c.delay, *(d for d, in con.execute("SELECT delay FROM pace WHERE domain=?", (domain,))))
     try:
         custom = None if platform else custom_adapter(domain)
         platform = "custom" if custom else platform or detect(c)
@@ -553,6 +567,9 @@ def run(domain, category, platform=None, max_pages=3000):
             con.commit()
     except Blocked as e:
         n, status, note = 0, "blocked", str(e)
+        if note.startswith("429"):  # too fast for this shop: twice as slow from the next run on (at most 30 s)
+            con.execute("INSERT OR REPLACE INTO pace VALUES (?, ?)", (domain, min(30.0, max(3.0, c.delay * 2))))
+            con.commit()
     except Exception as e:  # keep going with other shops; the note says what broke
         n, status, note = con.execute("SELECT COUNT(*) FROM products WHERE shop=?", (domain,)).fetchone()[0], "error", f"{type(e).__name__}: {e}"[:300]
     con.close()

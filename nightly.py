@@ -16,6 +16,7 @@ Publishing keeps the 57 MB data file out of main's history:
 Log: logs/nightly-YYYY-MM-DD.log
 """
 import subprocess
+import time
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -127,6 +128,36 @@ def server_nightly():
     log("server nightly done")
 
 
+def failed(shops):
+    """Of these shops, the ones the last run couldn't collect: down, an error, or a 429 (not a refusal)."""
+    import sqlite3
+    con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
+    q = ",".join("?" * len(shops))
+    out = [d for d, in con.execute(f"""SELECT domain FROM shops WHERE domain IN ({q}) AND (status IN ('down', 'error')
+                                        OR (status = 'blocked' AND note LIKE '429 %'))""", shops)]
+    con.close()
+    return out
+
+
+def catch_up():
+    """On the server, in the afternoon: the shops last night's run missed (down, an error, a 429) once more, at their
+    own pace, then a new build, so one bad night doesn't leave a shop's prices a day old."""
+    import sqlite3
+    con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
+    shops = [d for d, in con.execute("SELECT domain FROM shops WHERE last_scraped >= datetime('now', '-1 day')")]
+    con.close()
+    again = [d for d in failed(shops) if d not in PC_ONLY]
+    log(f"catch-up: {' '.join(again) or 'nothing missed'}")
+    if not again:
+        return
+    run(sys.executable, "refresh.py", "--only-shops", *again, "--no-match", "--workers", "2", check=False)
+    merge_inbox()
+    run(sys.executable, "match.py")
+    run(sys.executable, "build_seed.py")
+    run("sudo", "/usr/bin/systemctl", "restart", "shporta")
+    log("catch-up done, site restarted")
+
+
 def merge_inbox():
     """Rows the PC collected for the PC-only shops (export_pc_only): products by (shop, external_id), their prices."""
     import sqlite3
@@ -182,6 +213,11 @@ def pc_only_nightly():
     log("pc-only nightly start")
     stop_local_server()
     run(sys.executable, "refresh.py", "--only-shops", *PC_ONLY, "--no-match", check=False)
+    again = failed(PC_ONLY)
+    if again:  # a home connection drops at times: the shops it missed get one more try, later
+        log(f"trying again in 20 minutes: {' '.join(again)}")
+        time.sleep(1200)
+        run(sys.executable, "refresh.py", "--only-shops", *again, "--no-match", check=False)
     export_pc_only()
     log("pc-only nightly done")
 
@@ -214,6 +250,8 @@ def export_pc_only():
 
 
 def main():
+    if "--catch-up" in sys.argv:
+        return catch_up()
     if "--server" in sys.argv:
         return server_nightly()
     if "--pc-only" in sys.argv:
