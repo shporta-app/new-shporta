@@ -169,6 +169,8 @@ def merge_inbox():
     if not INBOX.exists():
         return
     con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
+    if "via" not in {r[1] for r in con.execute("PRAGMA table_info(products)")}:  # 'user': a shared price (crowd.py)
+        con.execute("ALTER TABLE products ADD COLUMN via TEXT")
     for f in sorted(INBOX.glob("*.db")):
         con.execute("ATTACH ? AS pc", (str(f),))
         con.execute("""INSERT INTO shops SELECT * FROM pc.shops WHERE true
