@@ -712,7 +712,7 @@ def barcode(code):
         names = [x for x in (rec.get("product_name_en"), rec.get("product_name"), rec.get("product_name_fr")) if x]
         out["name"] = " ".join(x for x in (brand, names[0] if names else "", rec.get("quantity")) if x)
         out["source"] = source
-        m = match_text(" ".join(names[:2] + [rec.get("quantity") or ""]), brand)
+        m = match_text(" ".join(names[:1] + [rec.get("quantity") or ""]), brand, exact_name=True)
         out.update(how="name", sure=m["sure"], items=m["items"], maybe=m["maybe"], size_missing=m["size_missing"],
                    size_ok=not m["size_missing"])
     return out
@@ -776,7 +776,7 @@ SIZE_LABELS = {"sasia", "sasi", "vellimi", "volumi", "format", "formati", "madhe
                "fl", "pcs", "cope", "x"}
 
 
-def match_text(text, brand_hint=""):
+def match_text(text, brand_hint="", exact_name=False):
     """What is written on a package (the phone's OCR, or a barcode record's brand + name + size) -> our product.
     Every candidate is scored: the rare words of its name that are on the package count for it, the words of its
     name that are not there count against it. sure: the brand and most of the name match, clearly better than the
@@ -847,7 +847,14 @@ def match_text(text, brand_hint=""):
     # a refill, a set, a travel size or a tester is another product: the package and the name must agree on it
     variant = {"refill", "recharge", "ricarica", "set", "kit", "mini", "travel", "tester", "sample", "duo", "trio", "coffret", "gift"}
     same_variant = (variant & seen) == (variant & best[3])
-    sure = brand_ok and best[1] >= 0.7 and len(named) >= 2 and margin >= 1.5 and same_variant
+    # the words that tell products of a line apart are rare ("Double", "Purifying", "Intensive"): every rare word of
+    # our name must be on the package; and a barcode's record names the product exactly, so its rare words must be
+    # in our name too ("Toleriane Purifying Foaming Cleanser" is not "Toleriane Foaming Double Cleanser")
+    rare = lambda w: idf(w) >= 3.0 and w not in brands and len(w) >= 3
+    ours_on_pack = all(w in seen for w in best[3] if rare(w))
+    theirs_in_ours = not exact_name or all(w in best[3] for w in set(name_words(text)) if w in df and rare(w) and w not in common)
+    sure = (brand_ok and best[1] >= 0.7 and len(named) >= 2 and margin >= 1.5 and same_variant
+            and ours_on_pack and theirs_in_ours)
     items = [s[2] for s in group][:6]
     sizes = {size_of(m) for m in SIZE_RE.finditer(fold(text))}
     # a cream is 340 g on the jar and "340 ml" at a shop: the same number in g and ml is the same size here
