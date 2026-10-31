@@ -965,13 +965,14 @@ def offers_like(raw, brands, idf):
     # the shade or number printed on the package ("120 Classic Ivory") first
     nums = {n for n in raw if n.isdigit()}
     best.sort(key=lambda x: (-bool(nums & set(re.findall(r"\d+", fold(x[1]["title"])))), -x[0], -x[1]["in_stock"], x[1]["price"]))
-    seen_shop, out = set(), []
-    for hit, o in best:
-        if (o["shop"], fold(o["title"])) in seen_shop:
+    seen_title, per_shop, out = set(), collections.Counter(), []
+    for hit, o in best:  # at most three per shop, so every shop that has it shows
+        if (o["shop"], fold(o["title"])) in seen_title or per_shop[o["shop"]] >= 3:
             continue
-        seen_shop.add((o["shop"], fold(o["title"])))
+        seen_title.add((o["shop"], fold(o["title"])))
+        per_shop[o["shop"]] += 1
         out.append(public(o))
-    return out[:8]
+    return out[:9]
 
 
 def identify(text):
