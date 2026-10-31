@@ -32,7 +32,8 @@ def main():
     ap.add_argument("--no-match", action="store_true", help="don't rebuild matches/report afterwards")
     a = ap.parse_args()
     con = sqlite3.connect(HERE / "data" / "phia.db", timeout=120)
-    sql = "SELECT domain, category, platform FROM shops WHERE status IN ('ok', 'error')"
+    # the PC's shops are asked every night even if the last try found them down: a home connection drops at times
+    sql = "SELECT domain, category, platform FROM shops WHERE status IN ('ok', 'error'" + (", 'down')" if a.only_shops else ")")
     shops = con.execute(sql + (" AND category = ?" if a.only else "") + " ORDER BY products DESC", (a.only,) if a.only else ()).fetchall()
     slow = con.execute("SELECT domain, category, platform FROM shops WHERE status = 'blocked' AND note LIKE '429 %'"
                        + (" AND category = ?" if a.only else "") + " ORDER BY products DESC", (a.only,) if a.only else ()).fetchall()

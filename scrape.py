@@ -520,10 +520,16 @@ def _write_once(con, shop, rows):
 def run(domain, category, platform=None, max_pages=3000):
     domain = domain.lower().removeprefix("https://").removeprefix("http://").strip("/")
     base = "https://" + domain
-    try:
-        base = re.match(r"https?://[^/]+", requests.get(base, headers={"User-Agent": UA}, timeout=20).url).group(0)
-    except requests.RequestException as e:
-        return record(domain, category, None, "down", type(e).__name__, 0)
+    # a home connection drops for a moment now and then (SSLError, DNS): two more tries before calling the shop down
+    for pause in (0, 30, 120):
+        time.sleep(pause)
+        try:
+            base = re.match(r"https?://[^/]+", requests.get(base, headers={"User-Agent": UA}, timeout=20).url).group(0)
+            break
+        except requests.RequestException as e:
+            err = e
+    else:
+        return record(domain, category, None, "down", type(err).__name__, 0)
     c = Client(base)
     con = db()
     try:
