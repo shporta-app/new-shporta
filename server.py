@@ -724,6 +724,8 @@ def barcode(code):
         out["name"] = " ".join(x for x in (brand, names[0] if names else "", rec.get("quantity")) if x)
         out["source"] = source
         m = match_text(" ".join(names[:1] + [rec.get("quantity") or ""]), " ".join(brands), exact_name=True)
+        if not m["sure"] and len(names) > 1:  # another of its names may carry the shade ("Fit Me Matte 115 Ivory")
+            m = match_text(" ".join(dict.fromkeys(names)) + " " + (rec.get("quantity") or ""), " ".join(brands))
         out.update(how="name", sure=m["sure"], items=m["items"], maybe=m["maybe"], size_missing=m["size_missing"],
                    size_ok=not m["size_missing"], offers=m.get("offers", []), words=m["words"])
     return out
