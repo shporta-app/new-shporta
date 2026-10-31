@@ -1497,7 +1497,8 @@ const MENU = [
     ["#share", "Ndaje shportën me një mik", MI('<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>'), "share"],
   ]],
   ["Rreth shportës", [
-    ["/rreth", "Si funksionon", MI('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>')],
+    ["#guide", "Si funksionon", MI('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6"/><path d="M12 17.2v.1"/>'), "guide"],
+    ["/rreth", "Pyetje të shpeshta", MI('<path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12h5"/>')],
     ["/per-dyqanet", "Për dyqanet", MI('<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/>')],
     ["/privatesia", "Cookies dhe privatësia", MI('<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/>')],
   ]],
@@ -1527,6 +1528,7 @@ function menuDialog() {
     if (e.target.closest("a[data-link]")) return closeMenu(true);
     if (!b) return;
     if (b.dataset.menu === "close") closeMenu();
+    if (b.dataset.menu === "guide") { closeMenu(true); openGuide(); }
     if (b.dataset.menu === "share") navigator.share({ title: "shporta", text: "Krahaso çmimin e të njëjtit produkt në dyqanet online të Shqipërisë", url: "https://shporta.app/?nga=ndaj" }).catch(() => {});
     if (b.dataset.menu === "install") {
       closeMenu();
@@ -1579,6 +1581,86 @@ function closeMenu(now = false) {
   setTimeout(() => { d.classList.remove("closing"); d.close(); }, 200);
 }
 document.getElementById("menu-open").addEventListener("click", openMenu);
+
+/* ---------- the guide: what shporta does, in four short steps, each with a way straight to it ---------- */
+const GUIDE_KEY = "shporta-guide-seen";
+const GUIDE = [
+  { kicker: "Mirë se vjen në shporta", icon: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>', title: "Kërko një produkt",
+    text: "Shkruaj emrin ose markën. shporta të tregon çdo dyqan online shqiptar që e shet, në të njëjtën madhësi, nga më i liri.",
+    link: ["Kërko tani", "/?kerko"] },
+  { icon: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/>',
+    title: "Skano barkodin", text: "Në dyqan apo në shtëpi: drejto kamerën te barkodi i produktit dhe shih sa kushton në çdo dyqan.",
+    link: ["Hap skanerin", "/skano"] },
+  { icon: '<path d="M12 21s-7-4.4-9.3-9A5.2 5.2 0 0 1 12 6.5 5.2 5.2 0 0 1 21.3 12C19 16.6 12 21 12 21z"/>', title: "Ndiq çmimin",
+    text: "Te çdo produkt shtyp \"Ndiq çmimin\" dhe të njoftojmë kur bie. Pa llogari, pa email nëse nuk do.",
+    link: ["Shiko të ndjekurat", "/lista"] },
+  { icon: '<path d="M3 6h2l2.2 10.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.2L20.5 9H6.2"/><circle cx="9.5" cy="21" r="1"/><circle cx="17" cy="21" r="1"/>',
+    title: "Bli më lirë gjithçka", text: "Shto disa produkte në shportë dhe shiko ku t'i blesh të gjitha me më pak para, te një dyqan ose në dy.",
+    link: ["Hap shportën", "/shporta"] },
+];
+function openGuide(at = 0) {
+  document.getElementById("guide")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<dialog class="guide" id="guide" aria-labelledby="guide-title"><div class="guide-card"></div></dialog>`);
+  const d = document.getElementById("guide"), card = d.querySelector(".guide-card");
+  const done = () => { try { localStorage.setItem(GUIDE_KEY, "1"); } catch {} d.close(); };
+  const draw = (i, dir = 0) => {
+    const s = GUIDE[i], last = i === GUIDE.length - 1;
+    card.innerHTML = `<div class="guide-top"><span class="guide-icon">${MI(s.icon)}</span>
+        <button type="button" class="guide-skip" data-g="skip">${last ? "Mbyll" : "Kalo"}</button></div>
+      <div class="guide-body${dir ? (dir > 0 ? " from-right" : " from-left") : ""}">
+        ${s.kicker ? `<p class="guide-kicker">${s.kicker}</p>` : ""}
+        <h2 id="guide-title">${s.title}</h2><p>${s.text}</p>
+        <a class="guide-link" href="${s.link[1]}" data-g="go">${s.link[0]} ${MI('<path d="M5 12h14M13 6l6 6-6 6"/>')}</a></div>
+      <div class="guide-foot"><div class="guide-dots" aria-hidden="true">${GUIDE.map((_, j) => `<i class="${j === i ? "on" : ""}"></i>`).join("")}</div>
+        <span class="sr">Hapi ${i + 1} nga ${GUIDE.length}</span>
+        ${i ? `<button type="button" class="guide-back" data-g="back">Mbrapa</button>` : ""}
+        <button type="button" class="guide-next" data-g="next" autofocus>${last ? "Fillo" : "Tjetri"}</button></div>`;
+    card.querySelector(".guide-next").focus();
+    card.onclick = (e) => {
+      const b = e.target.closest("[data-g]");
+      if (!b) return;
+      const g = b.dataset.g;
+      if (g === "next") return last ? done() : draw(i + 1, 1);
+      if (g === "back") return draw(i - 1, -1);
+      if (g === "skip") return done();
+      if (g === "go") {
+        e.preventDefault();
+        done();
+        const href = b.getAttribute("href");
+        if (href === "/?kerko") {  // straight into the search box
+          const box = document.getElementById("q-hero") || document.getElementById("q-top");
+          if (location.pathname === "/" && box) return box.focus();
+          go("/");
+          return setTimeout(() => document.getElementById("q-hero")?.focus(), 450);
+        }
+        go(href);
+      }
+    };
+  };
+  // a swipe left or right on a phone moves between steps
+  let x0 = null;
+  card.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  card.addEventListener("touchend", (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0, i = [...card.querySelectorAll(".guide-dots i")].findIndex((n) => n.classList.contains("on"));
+    if (dx < -50 && i < GUIDE.length - 1) draw(i + 1, 1);
+    if (dx > 50 && i > 0) draw(i - 1, -1);
+    x0 = null;
+  });
+  d.addEventListener("click", (e) => { if (e.target === d) done(); });  // the dimmed page around the card
+  d.addEventListener("cancel", () => { try { localStorage.setItem(GUIDE_KEY, "1"); } catch {} });
+  draw(at);
+  d.showModal();
+}
+document.getElementById("guide-open").addEventListener("click", () => openGuide());
+// the first visit: once the cookie question is answered, the guide opens by itself, one time only
+function maybeGuide() {
+  try { if (localStorage.getItem(GUIDE_KEY)) return; } catch { return; }
+  if (document.getElementById("consent") || document.querySelector("dialog[open]") || location.pathname.startsWith("/njoftim/")) return;
+  openGuide();
+}
+setTimeout(maybeGuide, 1200);
+document.addEventListener("click", (e) => { if (e.target.closest("[data-consent]")) setTimeout(maybeGuide, 500); });
 
 /* ---------- instant suggestions while typing ---------- */
 function wireSuggest(form) {

@@ -1167,3 +1167,42 @@ a, button { touch-action: manipulation; }
 @media (prefers-reduced-motion: reduce) {
   .tour-card.on .tv-type, .tour-card.on .tv-offers i::after, .tour-card.on .tv-save b, .tour-card.on .tv-note { animation: none; }
 }
+
+/* ---------- the guide ("?") ---------- */
+dialog.guide { border: 0; padding: 0; background: none; width: min(420px, calc(100% - 32px)); max-width: none; overflow: visible; color: #F1EFF7;
+  transition: opacity .2s var(--ease-out), transform .2s var(--ease-out), display .2s allow-discrete, overlay .2s allow-discrete; }
+dialog.guide[open] { opacity: 1; transform: none; }
+@starting-style { dialog.guide[open] { opacity: 0; transform: scale(.96); } }
+dialog.guide::backdrop { background: rgba(10, 9, 16, .55); transition: opacity .2s ease, display .2s allow-discrete, overlay .2s allow-discrete; }
+@starting-style { dialog.guide[open]::backdrop { opacity: 0; } }
+.guide-card { background: var(--night); border: 1px solid var(--night-line); border-radius: 22px; padding: 20px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .35); overflow: hidden; }
+.guide-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.guide-icon { width: 56px; height: 56px; border-radius: 14px; background: var(--night-2); color: var(--lime); display: grid; place-items: center; }
+.guide-icon svg { width: 26px; height: 26px; }
+.guide-skip { border: 0; background: none; color: var(--night-muted); font: 600 15px var(--body); min-height: 44px; padding: 0 4px; cursor: pointer; }
+.guide-skip:hover { color: #fff; }
+.guide-body { padding: 14px 0 6px; display: grid; gap: 8px; }
+.guide-body.from-right { animation: guide-in-r .24s var(--ease-out) both; }
+.guide-body.from-left { animation: guide-in-l .24s var(--ease-out) both; }
+@keyframes guide-in-r { from { opacity: 0; transform: translateX(18px); } }
+@keyframes guide-in-l { from { opacity: 0; transform: translateX(-18px); } }
+.guide-body .guide-kicker { margin: 0; color: var(--lime); font: 700 14px/1.2 var(--body); }
+.guide-body h2 { margin: 0; color: #fff; font: 800 26px/1.15 var(--display); text-transform: none; }
+.guide-body p { margin: 0; color: #C9C5D6; font-size: 16px; line-height: 1.5; }
+.guide-link { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 44px; color: #fff; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 4px; }
+.guide-link svg { width: 18px; height: 18px; }
+.guide-foot { display: flex; align-items: center; gap: 10px; padding-top: 10px; }
+.guide-dots { display: flex; gap: 5px; margin-right: auto; }
+.guide-dots i { width: 7px; height: 7px; border-radius: 4px; background: var(--night-line); transition: width .2s var(--ease-out), background-color .2s ease; }
+.guide-dots i.on { width: 22px; background: var(--lime); }
+.guide-back, .guide-next { min-height: 46px; padding: 0 18px; border-radius: 12px; font: 700 15px var(--body); cursor: pointer; }
+.guide-back { background: none; color: #F1EFF7; border: 1px solid var(--night-line); }
+.guide-next { background: var(--lime); color: #14121F; border: 0; }
+.guide-next:active, .guide-back:active { transform: scale(.97); }
+.top .guide-btn { border: 0; background: none; cursor: pointer; color: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  .guide-body.from-right, .guide-body.from-left { animation: none; }
+  @starting-style { dialog.guide[open] { transform: none; } }
+}
