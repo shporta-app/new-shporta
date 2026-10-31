@@ -10,6 +10,10 @@ document.getElementById("q").onsubmit = (e) => {
   if (q) chrome.tabs.create({ url: `${SITE}/kerko?q=${encodeURIComponent(q)}` });
 };
 
+const shareBox = document.getElementById("share-on");
+chrome.storage.local.get("share", (v) => { shareBox.checked = v.share === true; });
+shareBox.onchange = () => chrome.storage.local.set({ share: shareBox.checked });
+
 chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
   if (!tab) return;
   let hostName = "";

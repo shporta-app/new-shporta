@@ -33,8 +33,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 import alerts
+import crowd
 import dupes
 import feedback
+import partners
 import push
 import seo
 import stats
@@ -80,6 +82,8 @@ COLS = ("id, shop, title, brand, url, image, price, regular_price, currency, in_
 HISTORY = ("seen", "since", "low30", "prev_price", "changed", "reg_seen")
 if set(HISTORY) <= {r[1] for r in db().execute("PRAGMA table_info(products)")}:
     COLS += ", " + ", ".join(HISTORY)
+if "via" in {r[1] for r in db().execute("PRAGMA table_info(products)")}:
+    COLS += ", via"  # 'user': a price a shopper shared from a shop we can't collect (crowd.py)
 TRACKED_SINCE = meta("tracked_since")
 HAS_ITEM_SEARCH = bool(db().execute("SELECT 1 FROM sqlite_master WHERE name = 'item_search'").fetchone())
 
@@ -134,6 +138,8 @@ def public(o):
         out["_size_val"] = o["size_val"]
     if o["shop"] in SECOND_HAND:
         out["used"] = True  # a used / vintage item: always labelled
+    if "via" in o.keys() and o["via"]:
+        out["via"] = o["via"]  # "parë nga një përdorues": the site says where the price came from
     return out
 
 
@@ -1237,6 +1243,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, dupe_list(q), cache="public, max-age=600")
             if path == "/api/shops":
                 return self._send(200, shops(), cache="public, max-age=3600")
+            if path == "/api/dyqan":  # /per-dyqanet: a shop's position against the others (partners.py)
+                code, out = partners.check(sys.modules[__name__], q.get("d", "")[:200])
+                return self._send(code, out)
+            if path == "/api/dyqan/kerkesat" and self.admin(q):  # what shops asked us (owner only)
+                return self._send(200, partners.requests_list())
             if path == "/api/push/key":  # notifications on the phone/computer (push.py)
                 return self._send(200, {"key": push.key()}, cache="public, max-age=86400")
             if path.startswith("/go/"):
@@ -1313,7 +1324,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/njoftim/ndalo":  # Gmail's own "unsubscribe" button (List-Unsubscribe-Post): stop every alert
             alerts.stop_all(parse_qs(urlparse(self.path).query).get("t", [""])[0])
             return self._send(200, {"ok": True})
-        if path not in ("/api/lookup", "/api/alert", "/api/feedback", "/api/push/subscribe", "/api/push/unsubscribe", "/api/push/test"):
+        if path not in ("/api/lookup", "/api/alert", "/api/feedback", "/api/push/subscribe", "/api/push/unsubscribe", "/api/push/test",
+                        "/api/dyqan"):
             return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -1322,6 +1334,10 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(n) or b"{}")
             if not isinstance(data, dict):
                 raise ValueError("expected an object")
+            if path == "/api/dyqan":  # a shop asks to be listed, sends its catalogue, wants the report or to leave
+                ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+                code, msg = partners.request(data, ip, self.headers.get("User-Agent", ""))
+                return self._send(code, {"message": msg} if code == 200 else {"error": msg})
             if path == "/api/feedback":  # "Raporto gabim" on a product page (feedback.py)
                 ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
                 offer = data.get("offer")
@@ -1348,8 +1364,17 @@ class Handler(BaseHTTPRequestHandler):
                 price = None  # "nan", "inf", 0 or negative: as if the page showed no price
             cur = str(data.get("currency") or "ALL")[:3].upper()
             self.count("lookup")  # the extension or the share page asked about a shop's product page
-            return self._send(200, lookup(str(data.get("title", ""))[:300], price, cur, str(data.get("url", ""))[:500],
-                                          str(data.get("gtin", ""))[:20]))
+            out = lookup(str(data.get("title", ""))[:300], price, cur, str(data.get("url", ""))[:500],
+                         str(data.get("gtin", ""))[:20])
+            try:  # a shop we can't collect: the extension may ask the shopper to share what they see (crowd.py)
+                if crowd.shop_of(str(data.get("url", ""))):
+                    out["wanted"] = True
+                    if data.get("share") is True:
+                        ip = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+                        out["shared"] = crowd.record(data, ip, self.headers.get("User-Agent", ""))
+            except Exception as e:
+                print(json.dumps({"error": f"crowd: {type(e).__name__}: {e}"}), flush=True)
+            return self._send(200, out)
         except (ValueError, KeyError, TypeError):
             return self._send(400, {"error": "Kërkesë e pavlefshme."})
         except Exception as e:

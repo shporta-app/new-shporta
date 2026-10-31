@@ -312,6 +312,9 @@ STATIC = {  # pages app.js draws itself; the server gives them a title, descript
                 "Shtesa e shportës për Edge dhe Firefox, ose butoni për çdo shfletues: në faqen e një dyqani online të tregon nëse i njëjti produkt kushton më pak diku tjetër në Shqipëri.",
                 "Shtesa për shfletuesin", "index,follow"),
     "/privatesia": ("Cookies dhe privatësia | shporta", "Çfarë ruan shporta dhe pse.", "Cookies dhe privatësia", "index,follow"),
+    "/per-dyqanet": ("Për dyqanet: shihni si krahasohen çmimet tuaja | shporta",
+                     "Shkruani adresën e dyqanit tuaj dhe shihni falas në sa produkte jeni më i liri dhe më i shtrenjti. Listim falas, raporti mujor i çmimeve, ose heqje nga shporta.",
+                     "Për dyqanet", "index,follow"),
     "/ndaj": ("Krahaso një link | shporta", "Ngjit ose ndaj linkun e një produkti nga një dyqan online dhe shiko ku kushton më lirë.",
               "Krahaso një link", "noindex,follow"),
     "/skano": ("Skano barkodin: krahaso çmimin në çdo dyqan | shporta",
@@ -390,7 +393,7 @@ def urlset(urls, lastmod):
 
 def page_urls(srv):
     cats = [r[0] for r in srv.db().execute(f"SELECT cat FROM items WHERE {srv.LISTED} GROUP BY cat")]
-    return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia")] + \
+    return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia", "/per-dyqanet")] + \
            [f"{BASE}/kategori/{c}" for c in cats] + [f"{BASE}/raport/{m}" for m in srv.report_months()]
 
 

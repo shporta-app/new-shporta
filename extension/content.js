@@ -1,5 +1,7 @@
 // Reads the product on the page the shopper is viewing, asks shporta.app, shows a small pill that opens into a panel.
 // It never contacts the shop and stores nothing from the page (only, if asked, "don't show on this site").
+// At a shop shporta can't read itself, it may ask the shopper to share what this page publishes about the product
+// (name, price, barcode, picture): only after a yes, and it can be turned off in the toolbar window.
 (() => {
   const SITE = "https://shporta.app";
   const CUR = { L: "ALL", LEK: "ALL", "LEKË": "ALL", LEKE: "ALL", ALL: "ALL", "€": "EUR", EUR: "EUR" };
@@ -34,7 +36,9 @@
           let offers = d.offers || (d.hasVariant && d.hasVariant[0] && d.hasVariant[0].offers);
           if (Array.isArray(offers)) offers = offers[0];
           const price = num(offers && (offers.price ?? offers.lowPrice));
-          if (d.name && price) return { title: d.name, price, currency: offers.priceCurrency || "ALL", gtin: gtinOf(d, offers) };
+          const img = Array.isArray(d.image) ? d.image[0] : d.image;
+          if (d.name && price) return { title: d.name, price, currency: offers.priceCurrency || "ALL", gtin: gtinOf(d, offers), source: "jsonld",
+            image: typeof img === "string" ? img : img && img.url, in_stock: !/OutOfStock|SoldOut|Discontinued/i.test(String(offers.availability || "")) };
         }
         for (const k of ["@graph", "mainEntity", "itemListElement", "item"]) if (d[k]) stack.push(d[k]);
       }
@@ -49,7 +53,7 @@
     const title = m("og:title") || document.querySelector("h1")?.textContent;
     if (!price || !title) return null;
     return { title: title.trim(), price, currency: m("product:price:currency") || m("og:price:currency") || "ALL",
-             gtin: String(m("gtin13") || m("product:ean") || "").replace(/\D/g, "") };
+             gtin: String(m("gtin13") || m("product:ean") || "").replace(/\D/g, ""), source: "meta", image: m("og:image") };
   }
 
   // Some big shops (Zara) put no product data in the page's code: only the visible text "3.950 ALL".
@@ -67,7 +71,7 @@
       const m = (el.textContent || "").replace(/\s+/g, " ").match(MONEY);
       if (!m) continue;
       const price = num(m[2] || m[3]);
-      if (title && price) return { title, price, currency: m[1] || m[4] };
+      if (title && price) return { title, price, currency: m[1] || m[4], source: "page" };
     }
     return null;
   }
@@ -223,7 +227,7 @@
     if (exact.length) {
       p.append(node("h3", { text: "I njëjti produkt" + (q.size_label ? `, ${q.size_label}` : "") + (q.by_barcode ? " (sipas barkodit)" : "") }));
       if (q.size_assumed && q.size_label)
-        p.append(node("div", { class: "note", text: `Kjo faqe nuk e shkruan madhësinë. E krahasuam me ${q.size_label}, sipas çmimit: kontrolloje te dyqani.` }));
+        p.append(node("div", { class: "note", text: `Madhësinë te kjo faqe nuk e lexuam dot. E krahasuam me ${q.size_label}, sipas çmimit: kontrolloje te dyqani.` }));
       const all = [...exact.slice(0, 6).map((o) => o.price), product.price].filter(Boolean);
       const max = Math.max(...all), lo = Math.min(...exact.filter((o) => o.in_stock).map((o) => o.price));
       // the page you're on, then the other shops, all on one scale
@@ -231,13 +235,13 @@
       exact.slice(0, 6).forEach((o) => p.append(row(go(o), host(o.shop) + (o.in_stock ? "" : " · s'ka gjendje"), o.price, o.currency,
         o.price / max, o.in_stock && o.price === lo && o.price < product.price, !o.in_stock)));
       if (data.unconfirmed && data.item && !same.length)
-        p.append(node("div", { class: "note", text: `+${data.unconfirmed} dyqane e kanë pa shkruar madhësinë.` }));
+        p.append(node("div", { class: "note", text: `+${data.unconfirmed} dyqane të tjera e kanë; madhësinë e tyre nuk e lexuam dot.` }));
     } else if (!same.length) {
       p.append(node("div", { class: "note", text: q.size_label ? `Nuk e gjetëm këtë produkt, ${q.size_label}, në dyqane të tjera.` : "Nuk e gjetëm këtë produkt në dyqane të tjera." }));
     }
     if (same.length) {
-      const box = node("div", { class: "alt" }, node("h3", { text: "Emër i njëjtë, madhësi tjetër ose pa e shkruar" }));
-      same.slice(0, 4).forEach((o) => box.append(row(go(o), `${host(o.shop)} · ${o.size || "pa madhësi"}`, o.price, o.currency)));
+      const box = node("div", { class: "alt" }, node("h3", { text: "Emër i njëjtë, madhësi tjetër ose që nuk e lexuam dot" }));
+      same.slice(0, 4).forEach((o) => box.append(row(go(o), `${host(o.shop)} · ${o.size || "kontrollo madhësinë"}`, o.price, o.currency)));
       p.append(box);
     }
     if (similar.length) {
@@ -260,10 +264,24 @@
         node("a", { class: "btn pri", href: page, target: "_blank", rel: "noopener", text: "Të gjitha çmimet" }),
         node("a", { class: "btn sec", href: `${page}#ndiq`, target: "_blank", rel: "noopener", text: "Ndiq çmimin" })));
     }
+    if (data.wanted && share === undefined) p.append(askShare());
     const off = node("button", { text: `Mos e shfaq te ${HOST}` });
     off.onclick = () => chrome.storage.local.set({ [`off:${HOST}`]: true }, () => { badge("", ""); el.remove(); });
-    p.append(node("div", { class: "ft" }, node("span", { text: "Çmimet e sotme nga dyqanet shqiptare" }), off));
+    p.append(node("div", { class: "ft" }, node("span", { text: data.shared ? "Faleminderit: e ndave këtë çmim" : "Çmimet e sotme nga dyqanet shqiptare" }), off));
     return p;
+  }
+
+  // asked once, only at a shop shporta can't read itself
+  function askShare() {
+    const yes = node("button", { class: "btn pri", text: "Po, ndaj" });
+    const no = node("button", { class: "btn sec", text: "Jo" });
+    const box = node("div", { class: "alt" },
+      node("h3", { text: `shporta nuk i lexon dot vetë çmimet e ${HOST}` }),
+      node("div", { class: "note", text: "Ndaj çmimet e produkteve që hap këtu, që të tjerët t'i krahasojnë? Dërgohet vetëm emri, çmimi, barkodi dhe adresa e produktit, asgjë për ty. E ndryshon kur të duash te butoni i shportës." }),
+      node("div", { class: "acts" }, yes, no));
+    yes.onclick = () => chrome.storage.local.set({ share: true }, () => { share = true; lastKey = ""; check(true); });
+    no.onclick = () => chrome.storage.local.set({ share: false }, () => { share = false; box.remove(); });
+    return box;
   }
 
   function row(href, label, price, cur, share, best, out) {
@@ -274,15 +292,17 @@
     return r;
   }
 
-  let lastKey = "";
-  function check() {
+  let lastKey = "", share;  // share: undefined = not asked yet, true/false = the shopper's answer
+  chrome.storage.local.get("share", (v) => { share = v.share; });
+  chrome.storage.onChanged.addListener((c) => { if (c.share) share = c.share.newValue; });
+  function check(open = false) {
     const p = detect();
     const key = p ? p.url + "|" + p.price : "";
     if (!p || key === lastKey) return;
     lastKey = key;
-    chrome.runtime.sendMessage({ type: "lookup", product: p }, (res) => {
+    chrome.runtime.sendMessage({ type: "lookup", product: { ...p, share: share === true } }, (res) => {
       if (chrome.runtime.lastError || !res) return;
-      if (res.ok) render(p, res.data, false);
+      if (res.ok) render(p, res.data, open);
     });
   }
 
@@ -293,6 +313,6 @@
   });
   // the toolbar button asks to open the panel
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "open") { lastKey = ""; const p = detect(); if (p) chrome.runtime.sendMessage({ type: "lookup", product: p }, (res) => res && res.ok && render(p, res.data, true)); }
+    if (msg.type === "open") { lastKey = ""; check(true); }
   });
 })();

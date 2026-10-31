@@ -27,7 +27,7 @@ from pathlib import Path
 
 import requests
 
-UA = "PhiaALBot/0.1 (+price comparison for Albanian shoppers)"
+UA = "shportaBot/1.0 (+https://shporta.app/per-dyqanet)"
 HERE = Path(__file__).parent
 DB_PATH = HERE / "data" / "phia.db"
 MIN_DELAY = 1.0
@@ -463,6 +463,8 @@ def db():
     con = sqlite3.connect(DB_PATH, timeout=120)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA)
+    if "via" not in {r[1] for r in con.execute("PRAGMA table_info(products)")}:  # 'user': a price a shopper shared (crowd.py)
+        con.execute("ALTER TABLE products ADD COLUMN via TEXT")
     return con
 
 
@@ -519,7 +521,7 @@ def _write_once(con, shop, rows):
                ON CONFLICT(shop, external_id) DO UPDATE SET url=excluded.url, title=excluded.title, brand=excluded.brand,
                  category_raw=excluded.category_raw, image=excluded.image, gtin=excluded.gtin, sku=excluded.sku,
                  currency=excluded.currency, price=excluded.price, regular_price=excluded.regular_price,
-                 in_stock=excluded.in_stock, last_seen=excluded.last_seen""",
+                 in_stock=excluded.in_stock, last_seen=excluded.last_seen, via=NULL""",
             {**r, "shop": shop, "now": now},
         )
         pid = con.execute("SELECT id FROM products WHERE shop=? AND external_id=?", (shop, r["external_id"])).fetchone()[0]

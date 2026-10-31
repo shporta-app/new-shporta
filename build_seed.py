@@ -33,6 +33,7 @@ HERE = Path(__file__).parent
 SRC = HERE / "data" / "phia.db"
 OUT = HERE / "seed" / "phia-api.db"
 STALE_DAYS = 3  # an offer not seen for this long (relative to the newest data) is not shown
+CROWD_STALE_DAYS = 7  # a price a shopper shared (crowd.py), shown with its date: it can't be collected each night
 
 from categories import CATEGORIES, NOT_LISTED, classify, fold  # noqa: E402  (categories.py explains the rules)
 
@@ -129,7 +130,7 @@ def main():
                                price REAL, regular_price REAL, currency TEXT, in_stock INTEGER,
                                name_key TEXT, size_val REAL, size_unit TEXT, cat TEXT, item_id TEXT, page TEXT,
                                in_compare INTEGER, seen TEXT, since TEXT, low30 REAL, prev_price REAL, changed TEXT,
-                               reg_seen INTEGER);
+                               reg_seen INTEGER, via TEXT);
         CREATE TABLE matches (product_id INTEGER PRIMARY KEY, group_id TEXT);
         CREATE TABLE shops (domain TEXT PRIMARY KEY, category TEXT, products INTEGER);
         CREATE TABLE items (id TEXT PRIMARY KEY, title TEXT, image TEXT, cat TEXT, shops INTEGER, in_stock_shops INTEGER,
@@ -153,10 +154,14 @@ def main():
     cutoff = (datetime.fromisoformat(latest) - timedelta(days=STALE_DAYS)).isoformat(timespec="seconds")
     history = price_history(src, latest[:10])
 
+    crowd_cutoff = (datetime.fromisoformat(latest) - timedelta(days=CROWD_STALE_DAYS)).isoformat(timespec="seconds")
+    via_col = "via" if "via" in {r[1] for r in src.execute("PRAGMA table_info(products)")} else "NULL"
+
     rows = []
-    for pid, shop, title, brand, url, image, price, reg, cur, stock, craw, seen in src.execute(
-            """SELECT id, shop, title, brand, url, image, price, regular_price, currency, in_stock, category_raw, last_seen
-               FROM products WHERE price > 0 AND last_seen >= ?""", (cutoff,)):
+    for pid, shop, title, brand, url, image, price, reg, cur, stock, craw, seen, via in src.execute(
+            f"""SELECT id, shop, title, brand, url, image, price, regular_price, currency, in_stock, category_raw, last_seen, {via_col}
+               FROM products WHERE price > 0 AND (last_seen >= ? OR ({via_col} = 'user' AND last_seen >= ?))""",
+            (cutoff, crowd_cutoff)):
         key, size = parse(title)
         key = alias.get(key, key)  # match.py rule 5: "Mancera Red Tobacco" -> "Mancera Red Tobacco EDP"
         cat = classify(title, craw, shop_cat.get(shop), shop)
@@ -166,7 +171,7 @@ def main():
         h = history.get(pid, {})
         rows.append([pid, shop, title, brand, url, image, price, reg, cur, stock, key,
                      size[0] if size else None, size[1] if size else None, cat, item, page_key(url), 1,
-                     seen[:10], h.get("since"), h.get("low30"), h.get("prev"), h.get("changed"), h.get("reg_seen")])
+                     seen[:10], h.get("since"), h.get("low30"), h.get("prev"), h.get("changed"), h.get("reg_seen"), via])
 
     # items: aggregate offers
     by_item = collections.defaultdict(list)

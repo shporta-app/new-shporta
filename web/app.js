@@ -28,7 +28,8 @@ function priceNote(o) {
       out.push(`<span class="hist">më i ulët në 30 ditë: ${lek(o.low30, o.currency)}</span>`);
     }
   }
-  if (o.seen && daysAgo(o.seen) >= 1) out.push(`<span class="hist">çmimi i parë më ${day(o.seen)}</span>`);
+  if (o.via === "user") out.push(`<span class="hist">çmimi i parë nga një përdorues i shportës më ${day(o.seen)}: ky dyqan nuk lejon leximin automatik, kontrolloje te dyqani</span>`);
+  else if (o.seen && daysAgo(o.seen) >= 1) out.push(`<span class="hist">çmimi i parë më ${day(o.seen)}</span>`);
   return out.length ? `<br>${out.join("<br>")}` : "";
 }
 // Shops write titles their own way ("CeraVe – Moisturizing Cream - Sasia: 340gr", "Serum 30 ml - 30 ml", all in capitals).
@@ -968,6 +969,13 @@ function pagePrivacy() {
       ndryshon çdo ditë dhe fshihet. Adresën (IP) nuk e ruajmë, dhe të nesërmen kodi nuk mund të lidhet më me ty.</p>
     <h2>Shporta ime</h2>
     <p>Produktet që shton në shportë ruhen vetëm në këtë shfletues. Për të llogaritur ku t'i blesh, shfletuesi na kërkon vetëm çmimet e sotme për ato produkte.</p>
+    <h2>Çmimet që ndan me shtesën</h2>
+    <p>Disa dyqane nuk e lejojnë leximin automatik. Nëse në shtesë zgjedh "Ndaj çmimet", kur hap një produkt te një nga këto dyqane
+      ruajmë atë që faqja publikon për produktin: emrin, çmimin, barkodin, foton, gjendjen dhe adresën e produktit, me të njëjtin kod ditor
+      si te statistikat (pa adresë IP, pa cookie, pa emër). Në shportë ky çmim shfaqet me datën dhe me shënimin që e ndau një përdorues.
+      E çaktivizon kur të duash te butoni i shtesës.</p>
+    <h2>Kërkesat e dyqaneve</h2>
+    <p>Kur një dyqan na shkruan te "Për dyqanet", ruajmë atë që shkruan në formular për t'iu përgjigjur, dhe asgjë tjetër.</p>
     <h2>Raportimet e gabimeve</h2>
     <p>Kur raporton një gabim, ruajmë produktin, dyqanin, arsyen, shënimin tënd dhe të njëjtin kod ditor si te statistikat (pa adresë, pa cookie).</p>
     <h2>Kursimet e mia</h2>
@@ -1039,6 +1047,120 @@ async function pageAbout() {
   if (!r.ok) throw new Error("Faqja nuk u ngarkua.");
   main.innerHTML = await r.text();
   document.title = "Si funksionon shporta: krahasimi i çmimeve në Shqipëri | shporta";
+}
+
+/* ---------- /per-dyqanet: for shops. Their position against the others (free, instant), then what they can ask ---------- */
+const BIZ_WANTS = [["listim", "Shtoni dyqanin tim në shporta"], ["katalog", "Kam një katalog produktesh (link)"],
+  ["raport", "Dua raportin mujor të çmimeve"], ["hiqe", "Hiqni dyqanin tim nga shporta"], ["tjeter", "Diçka tjetër"]];
+function pageForShops(params) {
+  const q = new URLSearchParams(params);
+  document.title = "Për dyqanet: si krahasohen çmimet tuaja | shporta";
+  main.innerHTML = `<div class="wrap biz">
+    <div class="page-head"><h1>për dyqanet</h1>
+      <p>Klientët tuaj i krahasojnë çmimet para se të blejnë. shporta u tregon ku e gjejnë të njëjtin produkt, në të njëjtën madhësi, dhe çdo klikim shkon drejt e te faqja e dyqanit. Falas.</p></div>
+    <section class="biz-sec">
+      <h2>Si krahasohen çmimet tuaja?</h2>
+      <form class="alert-form" id="biz-check">
+        <label for="biz-d">Adresa e dyqanit tuaj</label>
+        <span><input id="biz-d" name="d" placeholder="dyqani.al" autocomplete="url" autocapitalize="none" spellcheck="false" required>
+        <button class="btn" type="submit">Shiko</button></span>
+        <small>Pa regjistrim. Janë të njëjtat çmime që sheh çdokush te shporta, të mbledhura për dyqanin tuaj.</small>
+      </form>
+      <div id="biz-out" aria-live="polite"></div>
+    </section>
+    <section class="biz-sec">
+      <h2>Çfarë mund të bëni</h2>
+      <dl class="biz-ways">
+        <div><dt>Listim falas</dt><dd>Dyqanet në WooCommerce dhe Shopify i lexojmë vetë. Për të tjerët mjafton një link katalogu
+          (Google Merchant, Facebook, XML ose CSV). Listimi është dhe mbetet falas.</dd></div>
+        <div><dt>Raporti mujor i çmimeve</dt><dd>Çdo muaj: produktet ku jeni më i liri dhe ku më i shtrenjti, sa larg jeni nga konkurrenca,
+          çfarë shesin të tjerët që ju nuk e keni, dhe sa vizitorë ju dërguam. Falas për 3 muajt e parë.</dd></div>
+        <div><dt>Çmim i gabuar?</dt><dd>Na shkruani dhe e rregullojmë në përditësimin e radhës.</dd></div>
+        <div><dt>Heqje nga shporta</dt><dd>Nëse nuk doni të jeni në shporta, ju heqim brenda 48 orësh, pasi të konfirmojmë që kërkesa vjen nga dyqani.</dd></div>
+      </dl>
+    </section>
+    <section class="biz-sec">
+      <h2>Rregullat tona</h2>
+      <ul class="biz-rules">
+        <li>Renditja bëhet gjithmonë sipas çmimit, vetëm për të njëjtin produkt në të njëjtën madhësi. Nuk shitet.</li>
+        <li>Nëse një ditë do të ketë vend të paguar, do të shkruhet qartë "Sponsorizuar" dhe nuk do të ndryshojë renditjen.</li>
+        <li>Lexojmë vetëm emrin, çmimin, foton, gjendjen dhe linkun publik të produktit, një herë në ditë, një faqe në çast
+          dhe me ritmin që kërkon robots.txt juaj. Te refuzimi i parë ndalojmë.</li>
+        <li>Boti ynë quhet <code>shportaBot</code> dhe ju sjell këtu. Nëse e ndaloni, e respektojmë. Mund të shfaqim akoma
+          çmimin që një blerës e ka parë vetë në faqen tuaj dhe na e ka ndarë, gjithmonë me datën dhe me shënimin që e ndau një përdorues.</li>
+        <li>Linku drejt jush mban <code>utm_source=shporta</code>, që t'i shihni vizitat tona në statistikat tuaja.</li>
+      </ul>
+    </section>
+    <section class="biz-sec" id="kerkese">
+      <h2>Na shkruani</h2>
+      <form class="biz-form" id="biz-form" novalidate>
+        <label>Emri i dyqanit<input name="shop" autocomplete="organization" maxlength="120"></label>
+        <label>Adresa e dyqanit<input name="site" placeholder="dyqani.al" autocapitalize="none" spellcheck="false" required></label>
+        <label>Email<input name="email" type="email" autocomplete="email" required></label>
+        <label>Telefon <small>(nuk është e detyrueshme)</small><input name="phone" type="tel" autocomplete="tel" maxlength="40"></label>
+        <fieldset><legend>Çfarë dëshironi?</legend>
+          ${BIZ_WANTS.map(([v, t]) => `<label class="check"><input type="checkbox" name="wants" value="${v}"> ${t}</label>`).join("")}</fieldset>
+        <label>Linku i katalogut <small>(nëse keni)</small><input name="feed" type="url" placeholder="https://…" maxlength="500"></label>
+        <label>Mesazh <small>(nuk është e detyrueshme)</small><textarea name="note" rows="3" maxlength="1000"></textarea></label>
+        <button class="btn" type="submit">Dërgo</button>
+        <small id="biz-msg" role="status">Ju përgjigjemi me email brenda 2 ditësh pune. Emailin e përdorim vetëm për këtë kërkesë.</small>
+      </form>
+    </section>
+  </div>`;
+  const out = document.getElementById("biz-out"), form = document.getElementById("biz-form");
+  const fill = (d, want) => {
+    form.site.value = d;
+    form.querySelectorAll('[name="wants"]').forEach((c) => { if (c.value === want) c.checked = true; });
+  };
+  const nf = (n) => Number(n).toLocaleString("en").replace(/,/g, " ");
+  async function check(d) {
+    out.innerHTML = `<p class="note">Duke llogaritur…</p>`;
+    let r;
+    try { r = await api(`/api/dyqan?d=${encodeURIComponent(d)}`); }
+    catch (e) { out.innerHTML = `<p class="size-warn">${esc(e.message || "Nuk u llogarit. Provo përsëri.")}</p>`; return; }
+    if (!r.listed) {
+      out.innerHTML = `<div class="biz-out"><p><b>${esc(r.domain)}</b> nuk është ende në shporta, ku krahasojmë ${nf(r.shops)} dyqane.
+        Shtojeni falas: e lexojmë vetë nëse dyqani është në WooCommerce ose Shopify, përndryshe mjafton linku i katalogut.</p>
+        <p><a class="btn" href="#kerkese" id="biz-go">Shtoni dyqanin falas</a></p></div>`;
+      document.getElementById("biz-go").onclick = () => fill(r.domain, "listim");
+      return;
+    }
+    const ex = r.examples.map((x) => `<li><a href="/produkt/${esc(x.item)}" data-link>${esc(x.title)}</a>
+      <span>ju ${lek(x.price, "ALL")}, më i liri ${lek(x.lowest, "ALL")}</span></li>`).join("");
+    out.innerHTML = `<div class="biz-out">
+      <p><b>${nf(r.compared)}</b> produkte të ${esc(r.domain)} krahasohen sot me të njëjtin produkt në dyqane të tjera.</p>
+      <dl class="biz-nums">
+        <div><dt>Ku jeni më i liri</dt><dd>${nf(r.cheapest)}</dd></div>
+        <div><dt>Ku jeni më i shtrenjti</dt><dd>${nf(r.dearest)}</dd></div>
+        <div><dt>Mbi më të lirin, mesatarisht</dt><dd>${r.above_pct}%</dd></div>
+        ${r.clicks30 ? `<div><dt>Vizitorë që ju dërguam, 30 ditë</dt><dd>${nf(r.clicks30)}</dd></div>` : ""}
+      </dl>
+      ${ex ? `<h3>Ku jeni më larg nga çmimi më i ulët</h3><ul class="biz-ex">${ex}</ul>` : ""}
+      <p><a class="btn" href="#kerkese" id="biz-go">Merrni raportin e plotë falas</a></p></div>`;
+    document.getElementById("biz-go").onclick = () => fill(r.domain, "raport");
+  }
+  document.getElementById("biz-check").onsubmit = (e) => {
+    e.preventDefault();
+    const d = e.target.d.value.trim();
+    if (d) { history.replaceState(null, "", `/per-dyqanet?d=${encodeURIComponent(d)}`); check(d); }
+  };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("biz-msg"), f = new FormData(form);
+    const body = Object.fromEntries([...f.entries()].filter(([k]) => k !== "wants"));
+    body.wants = f.getAll("wants");
+    const btn = form.querySelector("button[type=submit]");
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/dyqan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await r.json();
+      msg.textContent = d.message || d.error;
+      msg.classList.toggle("bad", !r.ok);
+      if (r.ok) form.reset();
+    } catch { msg.textContent = "Nuk u dërgua. Provo përsëri."; msg.classList.add("bad"); }
+    btn.disabled = false;
+  };
+  if (q.get("d")) { document.getElementById("biz-d").value = q.get("d"); check(q.get("d")); }
 }
 
 /* ---------- "Shporta ime": several products, the cheapest way to buy them all ---------- */
@@ -1533,6 +1655,7 @@ async function route() {
     else if (pathname === "/shtesa") pageExtension();
     else if (pathname === "/privatesia") pagePrivacy();
     else if (pathname === "/rreth") await pageAbout();
+    else if (pathname === "/per-dyqanet") pageForShops(params);
     else if (pathname === "/dupe") await pageDupes(params);
     else if (pathname === "/ndaj") await pageShare(params);
     else if (pathname === "/lista") await pageList();

@@ -1,6 +1,7 @@
 // Talks to shporta.app for the content script (it can't call our API itself from a shop's page), sets the toolbar
 // badge (the saving on this page), and gives the popup the last result of the current tab.
-// Sends only the product name, price, currency, barcode and page address; stores nothing.
+// Sends only the product name, price, currency, barcode and page address. At a shop shporta can't read itself, and
+// only after the shopper said yes, shporta keeps that (with the picture and stock the page publishes) as a shared price.
 const API = "https://shporta.app";
 // the service worker sleeps between events, so the last result per tab lives in session storage (cleared on restart)
 

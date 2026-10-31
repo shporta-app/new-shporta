@@ -13,7 +13,7 @@ from pathlib import Path
 
 import requests
 
-UA = "PhiaALBot/0.1 (+price comparison for Albanian shoppers)"
+UA = "shportaBot/1.0 (+https://shporta.app/per-dyqanet)"
 HERE = Path(__file__).parent
 TIMEOUT = 15
 SLOW_PAUSE = 30  # seconds between shops in --slow mode

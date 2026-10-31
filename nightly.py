@@ -113,6 +113,11 @@ def server_nightly():
     # shops a vetting pass approved since the last run (shops_new_vetted.json, verdict "ok"): their first collection
     run(sys.executable, "add_shops.py", check=False)
     merge_inbox()
+    try:  # prices shoppers shared from shops we can't collect (crowd.py)
+        import crowd
+        log(f"shared prices: {crowd.merge()}")
+    except Exception as e:
+        log(f"shared prices failed: {e}")
     run(sys.executable, "match.py")
     run(sys.executable, "build_seed.py")
     run("sudo", "/usr/bin/systemctl", "restart", "shporta")
@@ -175,7 +180,7 @@ def merge_inbox():
                           brand=excluded.brand, category_raw=excluded.category_raw, image=excluded.image, gtin=excluded.gtin,
                           sku=excluded.sku, currency=excluded.currency, price=excluded.price,
                           regular_price=excluded.regular_price, in_stock=excluded.in_stock,
-                          last_seen=max(products.last_seen, excluded.last_seen)""")
+                          last_seen=max(products.last_seen, excluded.last_seen), via=NULL""")
         n = con.execute("""INSERT OR REPLACE INTO prices (product_id, day, price, regular_price)
                            SELECT p.id, x.day, x.price, x.regular_price FROM pc.prices x
                            JOIN pc.products q ON q.id = x.product_id
