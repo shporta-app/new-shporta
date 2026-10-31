@@ -445,7 +445,7 @@ async function pageHome() {
       <h1>i njëjti produkt, çmime të ndryshme</h1>
       <p>Shiko ku kushton më pak, para se ta blesh. Krahasojmë ${s.shops} dyqane online në Shqipëri.</p>
       ${searchForm("q-hero")}
-      <nav class="quick" aria-label="Kategoritë">${d.categories.filter((c) => c.count >= 100).sort((a, b) => b.count - a.count)
+      <nav class="quick" aria-label="Kategoritë">${d.categories.filter((c) => c.count >= 100 && c.id !== "tjeter").sort((a, b) => b.count - a.count)
         .map((c) => `<a href="/kategori/${c.id}" data-link>${esc(c.label)}</a>`).join("")}</nav>
       <p class="hero-stats"><b class="num">${s.compared.toLocaleString("en").replace(/,/g, " ")}</b> produkte të krahasuara,
         <b class="num">${s.offers.toLocaleString("en").replace(/,/g, " ")}</b> çmime, të përditësuara çdo ditë.</p>
@@ -466,8 +466,7 @@ async function pageHome() {
   <section class="section"><div class="wrap">
     <h2>kategoritë</h2>
     <p class="lead">Produktet që gjenden në dy ose më shumë dyqane, të renditura sipas llojit.</p>
-    <div class="cats">${d.categories.filter((c) => c.count).map((c) =>
-      `<a href="/kategori/${c.id}" data-link>${esc(c.label)}<span>${c.count.toLocaleString("en").replace(/,/g, " ")}</span></a>`).join("")}</div>
+    ${catTiles(d.categories)}
   </div></section>
 
   ${d.dupes && d.dupes.length ? `<section class="section"><div class="wrap">
@@ -524,13 +523,18 @@ function impactSection(d) {
   </div></section>`;
 }
 
+// the categories as a catalogue: a square per category, with the product most shops sell in it and how many we compare
+const catTiles = (cats) => `<div class="cat-grid">${cats.filter((c) => c.count)
+  .sort((a, b) => (a.id === "tjeter") - (b.id === "tjeter") || b.count - a.count).map((c) =>
+  `<a class="cat-tile" href="/kategori/${c.id}" data-link>
+    <span class="cat-pic">${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" data-fade onload="this.classList.add('in')">` : ""}</span>
+    <span class="cat-name">${esc(c.label)}</span>
+    <span class="cat-count">${plural(c.count, "produkt", "produkte")}</span></a>`).join("")}</div>`;
 async function pageCategories() {
   const d = homeCache || (homeCache = await api("/api/home"));
   main.innerHTML = `<div class="wrap"><div class="page-head"><h1>kategoritë</h1>
     <p>${plural(d.stats.compared, "produkt", "produkte")} gjenden në më shumë se një dyqan.</p></div>
-    <div class="section" style="padding-top:20px"><div class="cats">${d.categories.filter((c) => c.count).map((c) =>
-      `<a href="/kategori/${c.id}" data-link>${esc(c.label)}<span>${c.count.toLocaleString("en").replace(/,/g, " ")}</span></a>`).join("")}
-      <a href="/kategori/tjeter" data-link>Të tjera<span></span></a></div></div></div>`;
+    ${catTiles(d.categories)}</div>`;
 }
 
 async function pageCategory(cat, params) {
@@ -1054,10 +1058,74 @@ document.addEventListener("click", (e) => {
 
 // How it works + FAQ: one text (web/pages/rreth.html), also what the server sends to search engines
 async function pageAbout() {
-  const r = await fetch("/pages/rreth.html");
+  const [r, d] = await Promise.all([fetch("/pages/rreth.html"), homeCache || api("/api/home")]);
   if (!r.ok) throw new Error("Faqja nuk u ngarkua.");
-  main.innerHTML = await r.text();
+  homeCache = d;
   document.title = "Si funksionon shporta: krahasimi i çmimeve në Shqipëri | shporta";
+  const src = document.createElement("div");
+  src.innerHTML = await r.text();
+  const faq = [...src.querySelectorAll(".faq h3")].map((h) => [h.textContent, h.nextElementSibling ? h.nextElementSibling.innerHTML : ""]);
+  // the example: a real product sold by many shops today, and its real prices
+  const it = (d.featured || []).find((f) => (f.offers || []).filter((o) => o.in_stock).length >= 4) || (d.featured || [])[0];
+  const offers = it ? (it.offers || []).filter((o) => o.in_stock).sort((a, b) => a.price - b.price) : [];
+  const lo = offers[0], hi = offers[offers.length - 1];
+  const name = it ? nice(it.title, it.size) : "CeraVe Moisturizing Cream";
+  const shown = offers.slice(0, 4);
+  const max = shown.length ? Math.max(...shown.map((o) => o.price)) : 1;
+  const steps = [
+    ["Kërko ose skano", "Shkruaj emrin e produktit, skano barkodin me kamerë, ose ngjit linkun nga një dyqan.",
+      `<div class="tv-search"><span class="tv-type">${esc(name)}</span></div>
+       <div class="tv-chips"><span>${MI('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/>')}Skano</span>
+       <span>${MI('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')}Ngjit linkun</span></div>`],
+    ["I njëjti produkt, në çdo dyqan", `Gjejmë të njëjtin produkt, në të njëjtën madhësi${it && it.size ? ` (${esc(it.size)})` : ""}, te të gjitha dyqanet që e shesin sot.`,
+      `<div class="tv-prod">${it && it.image ? `<img src="${esc(it.image)}" alt="">` : ""}<b>${esc(name)}</b></div>
+       <ul class="tv-offers">${shown.map((o, i) => `<li class="${i ? "" : "best"}"><span>${esc(shopName(o.shop))}</span><i style="--w:${Math.round(35 + 65 * (o.price - shown[0].price) / Math.max(1, max - shown[0].price))}%"></i><b>${lek(o.price, o.currency)}</b></li>`).join("")}</ul>`],
+    ["Shiko sa kursen", "Më i liri del i pari. Të themi sa paguan më shumë te dyqani më i shtrenjtë, për të njëjtën gjë.",
+      lo && hi && hi.price > lo.price ? `<div class="tv-save"><small>Kursen</small><b>${lek(hi.price - lo.price, lo.currency)}</b>
+       <span>te ${esc(shopName(lo.shop))} në vend të ${esc(shopName(hi.shop))}</span></div>` : `<div class="tv-save"><b>−23%</b><span>mesatarisht, për të njëjtin produkt</span></div>`],
+    ["Ndiq çmimin", "Shtyp \"Ndiq çmimin\" dhe të njoftojmë në telefon ose me email kur bie. Pa llogari. (Njoftimi më lart është shembull.)",
+      `<div class="tv-note">${MI('<path d="M6 9a6 6 0 0 1 12 0c0 4.5 1.6 6.3 2.4 7H3.6C4.4 15.3 6 13.5 6 9z"/><path d="M10 19.5a2.2 2.2 0 0 0 4 0"/>')}
+       <div><b>Ra çmimi</b><span>${esc(name)}</span><span>${lo ? `tani <em>${lek(lo.price, lo.currency)}</em> te ${esc(shopName(lo.shop))}` : ""}</span></div></div>`],
+    ["Bli te dyqani", "shporta nuk shet asgjë. Një prekje dhe je te faqja e dyqanit, me çmimin që pe.",
+      `<div class="tv-buy"><span>Më i liri sot</span><b>${lo ? esc(shopName(lo.shop)) : "dyqani"}</b><em>${lo ? lek(lo.price, lo.currency) : ""}</em>
+       <span class="tv-btn">Hape në dyqan</span></div>`],
+  ];
+  main.innerHTML = `<div class="tour">
+    <div class="wrap"><div class="page-head"><h1>si funksionon shporta</h1><p>Pesë hapa. Rrëshqit për t'i parë.</p></div></div>
+    <div class="tour-track" id="tour" tabindex="0" aria-label="Si funksionon, hap pas hapi">${steps.map(([t, p, vis], i) =>
+      `<article class="tour-card" aria-label="Hapi ${i + 1} nga ${steps.length}">
+        <div class="tour-vis">${vis}</div>
+        <div class="tour-txt"><span class="tour-n">${i + 1}/${steps.length}</span><h2>${t}</h2><p>${p}</p></div></article>`).join("")}
+      <article class="tour-card tour-end" aria-label="Fillo">
+        <div class="tour-txt"><h2>Gati?</h2><p>${plural(d.stats.compared, "produkt", "produkte")} te ${d.stats.shops} dyqane, çmimet e sotme.</p>
+          <a class="btn" href="/" data-link>Fillo të krahasosh</a>
+          <a class="btn btn-ghost" href="#" data-install>Shkarko aplikacionin</a></div></article>
+    </div>
+    <div class="wrap tour-nav"><button type="button" class="tour-arrow" id="tour-prev" aria-label="Hapi i mëparshëm">${MI('<path d="M15 5l-7 7 7 7"/>')}</button>
+      <div class="tour-dots">${[...steps, 0].map((_, i) => `<button type="button" aria-label="Hapi ${i + 1}" data-i="${i}"></button>`).join("")}</div>
+      <button type="button" class="tour-arrow next" id="tour-next">Tjetri ${MI('<path d="M9 5l7 7-7 7"/>')}</button></div>
+    <div class="wrap faq-list"><h2>Pyetje të shpeshta</h2>
+      ${faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><div>${a}</div></details>`).join("")}</div>
+  </div>`;
+  const track = document.getElementById("tour"), cards = [...track.children];
+  const dots = [...document.querySelectorAll(".tour-dots button")];
+  const next = document.getElementById("tour-next"), prev = document.getElementById("tour-prev");
+  let at = 0;
+  const show = (i) => cards[Math.max(0, Math.min(cards.length - 1, i))].scrollIntoView({ behavior: calm() ? "auto" : "smooth", block: "nearest", inline: "start" });
+  const mark = (i) => {
+    at = i;
+    dots.forEach((b, j) => b.toggleAttribute("aria-current", j === i));
+    prev.disabled = i === 0;
+    next.hidden = i === cards.length - 1;
+    cards.forEach((c, j) => c.classList.toggle("on", j === i));
+  };
+  const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && mark(cards.indexOf(e.target))), { root: track, threshold: 0.6 });
+  cards.forEach((c) => io.observe(c));
+  next.onclick = () => show(at + 1);
+  prev.onclick = () => show(at - 1);
+  dots.forEach((b) => (b.onclick = () => show(Number(b.dataset.i))));
+  track.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { e.preventDefault(); show(at + 1); } if (e.key === "ArrowLeft") { e.preventDefault(); show(at - 1); } });
+  mark(0);
 }
 
 /* ---------- /per-dyqanet: for shops. Their position against the others (free, instant), then what they can ask ---------- */

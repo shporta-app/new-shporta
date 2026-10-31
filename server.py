@@ -199,10 +199,15 @@ def home():
     for f in featured:
         f["offers"] = offers_for(f["id"])
     cats = {c: n for c, n in db().execute(f"SELECT cat, COUNT(*) FROM items WHERE {LISTED} GROUP BY cat")}
+    # each category's picture: the product most shops sell in it, with a photo (a real product, never a stock image)
+    pics = {c: img for c, img in db().execute(f"""SELECT cat, image FROM (SELECT cat, image, ROW_NUMBER() OVER
+                (PARTITION BY cat ORDER BY in_stock_shops DESC, shops DESC) AS n FROM items
+                WHERE {LISTED} AND image IS NOT NULL AND image != '') WHERE n = 1""")}
     top = {k: [r for r in dupe_list({"kind": k})["items"] if r["orig_image"]] for k in ("inspired", "active", "known")}
     picks = [r for trio in zip(top["inspired"][:4], top["known"][:4] or [None] * 4, top["active"][:4]) for r in trio if r][:9]
     return {"stats": stats, "deals": deals, "featured": featured, "impact": impact(), "routine": routine(), "dupes": picks,
-            "categories": [{"id": c, "label": label, "count": cats.get(c, 0)} for c, label in CATEGORIES.items()]}
+            "categories": [{"id": c, "label": label, "count": cats.get(c, 0), "image": pics.get(c)} for c, label in CATEGORIES.items()]
+                          + [{"id": "tjeter", "label": "Të tjera", "count": cats.get("tjeter", 0), "image": pics.get("tjeter")}]}
 
 
 _home = {"at": 0, "data": None}
