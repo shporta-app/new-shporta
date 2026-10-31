@@ -936,10 +936,16 @@ def offers_like(raw, brands, idf):
     words = [w for w in dict.fromkeys(raw) if len(w) >= 3 and not w.isdigit() and w not in common]
     if not words:
         return []
-    # each brand and the two most telling words, one at a time: a shop may leave the brand out of the name
-    keys = list(dict.fromkeys(brands[:3] + sorted((w for w in words if w not in brands), key=lambda w: -len(w))[:2]))
-    rows = {r["id"]: dict(r) for r in db().execute(  # one pass over the listings
-        f"SELECT {COLS} FROM products WHERE {' OR '.join('name_key LIKE ?' for _ in keys)} LIMIT 8000", [f"%{k}%" for k in keys])}
+    # a brand on the package AND a word of its name: precise even for a brand with thousands of listings
+    named = sorted((w for w in words if w not in brands), key=lambda w: -len(w))[:6]
+    if not named:
+        return []
+    where = "(" + " OR ".join("name_key LIKE ?" for _ in named) + ")"
+    args = [f"%{w}%" for w in named]
+    if brands:
+        where = "(" + " OR ".join("name_key LIKE ?" for _ in brands[:3]) + ") AND " + where
+        args = [f"%{b}%" for b in brands[:3]] + args
+    rows = {r["id"]: dict(r) for r in db().execute(f"SELECT {COLS} FROM products WHERE {where} LIMIT 5000", args)}
     said = set(words)
     best = []
     for o in rows.values():
