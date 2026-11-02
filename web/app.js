@@ -347,26 +347,26 @@ function deal(it) {
   </a>`;
 }
 
-// A dupe is another brand's product that does the same job for less. Never the same product: we say why it's a dupe.
+// A cheaper alternative: another brand's product with the same active ingredient at the same strength. Objective
+// and checkable only (comparative advertising, Law 9902 art. 25): never "dupe", "kopje" or "frymëzuar nga" in our words,
+// never a claim that one is as good as the other.
 const DUPE_WHY = {
-  inspired: "Dyqani e shet si version të frymëzuar nga ky parfum.",
-  active: "I njëjti përbërës kryesor, në të njëjtën përqindje, në të njëjtin lloj produkti.",
-  known: "Dupe që komuniteti i bukurisë e krahason gjerësisht me origjinalin. Përbërësit nuk janë të njëjtë; ngjashmëria është te rezultati.",
+  active: "Markë tjetër, produkt tjetër. Ka të njëjtin përbërës aktiv në të njëjtën përqindje, në të njëjtin lloj produkti, sipas emrit të produktit. Formula e plotë ndryshon: kontrollo përbërësit te dyqani.",
 };
 function dupePair(r, { showOrig = true } = {}) {
   const size = (x) => (x ? ` <small>${esc(x)}</small>` : "");
   const orig = showOrig ? `<a class="dp-side" href="/produkt/${esc(r.orig_id)}" data-link>
       <span class="dp-pic">${img(r.orig_image, r.orig_title)}</span>
-      <span><small>Origjinali</small><span class="dp-name">${esc(nice(r.orig_title, r.orig_size))}</span>
+      <span><small>Produkti</small><span class="dp-name">${esc(nice(r.orig_title, r.orig_size))}</span>
         <span class="num">${lek(r.orig_price)}${size(r.orig_size)}</span></span></a>` : "";
   return `<div class="dp${showOrig ? "" : " dp-single"}">
     ${orig}
     <a class="dp-side dp-dupe" href="/produkt/${esc(r.dupe_id)}" data-link>
       <span class="dp-pic">${img(r.dupe_image, r.dupe_title)}</span>
-      <span><small>Dupe</small><span class="dp-name">${esc(nice(r.dupe_title, r.dupe_size))}</span>
+      <span><small>Alternativa</small><span class="dp-name">${esc(nice(r.dupe_title, r.dupe_size))}</span>
         <span class="num">${lek(r.dupe_price)}${size(r.dupe_size)}</span></span></a>
     <div class="dp-why"><span class="save">−${r.save_pct}%${r.orig_size && r.dupe_size && r.orig_size !== r.dupe_size ? " për ml" : ""}</span>
-      <span class="chip">${esc(r.reason)}</span><small>${DUPE_WHY[r.kind] || ""}</small></div>
+      <span class="chip">I njëjti përbërës aktiv: ${esc(r.reason)}</span><small>${DUPE_WHY[r.kind] || ""}</small></div>
   </div>`;
 }
 
@@ -470,9 +470,9 @@ async function pageHome() {
   </div></section>
 
   ${d.dupes && d.dupes.length ? `<section class="section"><div class="wrap">
-    <div class="section-head"><h2>dupe të produkteve të shtrenjta</h2><a href="/dupe" data-link>Të gjitha dupe</a></div>
-    <p class="lead">Jo i njëjti produkt, por bën të njëjtën punë për shumë më pak. Te parfumet, dyqani vetë thotë nga cili parfum është frymëzuar;
-      te kujdesi i lëkurës, përbërësi kryesor dhe përqindja janë të njëjta; te grimi, janë dupe që krahasohen gjerësisht.</p>
+    <div class="section-head"><h2>alternativa më të lira</h2><a href="/alternativa" data-link>Të gjitha alternativat</a></div>
+    <p class="lead">Produkte nga marka të tjera me të njëjtin përbërës aktiv, në të njëjtën përqindje dhe në të njëjtin lloj produkti, me një çmim për ml të paktën 30% më të ulët.
+      Nuk janë i njëjti produkt dhe nuk hyjnë te krahasimi i çmimeve.</p>
     <div class="dps">${d.dupes.slice(0, 3).map((r) => dupePair(r)).join("")}</div>
   </div></section>` : ""}
 
@@ -644,11 +644,11 @@ async function pageItem(id) {
           <button type="button" class="linkish" id="report-open">Raporto gabim</button></p>
       </div>
     </div>
-    ${it.dupes && it.dupes.length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2>
+    ${it.dupes && it.dupes.length ? `<section class="section apart"><h2>alternativa më të lira</h2>
       <p class="lead">Këto nuk janë i njëjti produkt dhe nuk hyjnë te krahasimi i çmimeve më sipër. ${esc(DUPE_WHY[it.dupes[0].kind] || "")} Kontrollo përbërësit dhe madhësinë te dyqani.</p>
       <div class="dps">${it.dupes.map((r) => dupePair(r, { showOrig: false })).join("")}</div></section>` : ""}
-    ${it.dupe_of && it.dupe_of.length ? `<section class="section apart"><h2>alternativë më e lirë e</h2>
-      <p class="lead">Ky produkt kushton më pak se origjinali. ${esc(DUPE_WHY[it.dupe_of[0].kind] || "")}</p>
+    ${it.dupe_of && it.dupe_of.length ? `<section class="section apart"><h2>me të njëjtin përbërës aktiv si</h2>
+      <p class="lead">Ky produkt kushton më pak për ml. ${esc(DUPE_WHY[it.dupe_of[0].kind] || "")}</p>
       <div class="dps">${it.dupe_of.map((r) => dupePair(r)).join("")}</div></section>` : ""}
     ${(it.other_sizes || []).length ? `<section class="section"><h2>i njëjti produkt, madhësi tjetër</h2><p class="lead">I njëjti emër, por madhësi tjetër, ose madhësi që nuk e lexuam dot. Nuk krahasohen me çmimet më sipër.</p>
       <div class="grid">${it.other_sizes.map(tile).join("")}</div></section>` : ""}
@@ -855,19 +855,18 @@ async function pageShops() {
 async function pageDupes(params) {
   const q = new URLSearchParams(params);
   const d = await api(`/api/dupes?${q}`);
-  document.title = "Dupe të produkteve të shtrenjta | shporta";
-  const tab = (k, label) => `<a class="tab" href="/dupe${k ? `?kind=${k}` : ""}" data-link ${d.kind === k || (!d.kind && !k) ? 'aria-current="page"' : ""}>${label}</a>`;
+  document.title = "Alternativa më të lira me të njëjtin përbërës aktiv | shporta";
   main.innerHTML = `<div class="wrap">
-    <div class="page-head"><h1>dupe</h1>
-      <p>${plural(d.total, "produkt i shtrenjtë", "produkte të shtrenjta")} me një alternativë të paktën 30% më të lirë. Jo i njëjti produkt: për secilin themi pse e quajmë dupe.</p></div>
-    <nav class="tabs" aria-label="Lloji">${tab(null, "Të gjitha")}${tab("inspired", "Parfume")}${tab("active", "Kujdesi i lëkurës")}${tab("known", "Grim")}</nav>
+    <div class="page-head"><h1>alternativa më të lira</h1>
+      <p>Për ${plural(d.total, "produkt", "produkte")} kujdesi për lëkurën: një produkt nga markë tjetër me të njëjtin përbërës aktiv, në të njëjtën përqindje
+        dhe në të njëjtin lloj produkti, të paktën 30% më i lirë për ml. Nuk është i njëjti produkt: formula e plotë ndryshon, ndaj kontrollo përbërësit te dyqani.</p></div>
     ${d.items.length ? `<div class="dps" id="list"></div>`
-      : `<div class="empty"><b>Asnjë dupe këtu ende.</b>Provo një kategori tjetër.</div>`}
+      : `<div class="empty"><b>Asnjë alternativë këtu ende.</b>Provo përsëri pas përditësimit të radhës.</div>`}
   </div>`;
   growList(document.getElementById("list"), { items: d.items, total: d.total, page: d.page, step: 6,
     noun: ["produkt i shtrenjtë", "produkte të shtrenjta"],
     render: (r) => dupePair(r) + (r.count > 1
-      ? `<a class="dp-more" href="/produkt/${esc(r.orig_id)}" data-link>Edhe ${r.count - 1} dupe të tjera për këtë produkt</a>` : ""),
+      ? `<a class="dp-more" href="/produkt/${esc(r.orig_id)}" data-link>Edhe ${r.count - 1 === 1 ? "1 alternativë tjetër" : `${r.count - 1} alternativa të tjera`} për këtë produkt</a>` : ""),
     next: (p) => { const n = new URLSearchParams(q); n.set("page", p); return api(`/api/dupes?${n}`); } });
 }
 
@@ -920,7 +919,7 @@ async function pageShare(params) {
       ${same.length ? block(exact.length ? "edhe këto dyqane e kanë, në madhësi tjetër ose me madhësi që nuk e lexuam dot" : "i njëjti produkt, madhësia nuk konfirmohet",
           same.slice(0, 12).map(sameRow).join(""), "unconfirmed") : ""}
       ${!exact.length && !same.length && (r.similar || []).length ? block("të ngjashme: nuk e konfirmojmë që është i njëjti produkt", r.similar.slice(0, 8).map((o) => offerRow(o, true)).join(""), "apart") : ""}
-      ${(r.dupes || []).length ? `<section class="section apart"><h2>dupe: një produkt tjetër, më i lirë</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
+      ${(r.dupes || []).length ? `<section class="section apart"><h2>alternativa më të lira</h2><div class="dps">${r.dupes.map((d) => dupePair(d, { showOrig: false })).join("")}</div></section>` : ""}
       <section class="section"><h2>krahaso një tjetër</h2>${form}</section></div>`;
   }
   document.getElementById("share-form").onsubmit = (e) => {
@@ -1019,7 +1018,7 @@ function pagePrivacy() {
     <p>Nuk shesim të dhëna, nuk kemi llogari përdoruesish dhe nuk shohim çfarë blen te dyqani.</p>
     <h2>Shtesa për shfletuesin</h2>
     <p>Kur hap një faqe produkti, shtesa lexon emrin, çmimin dhe monedhën e produktit, si edhe adresën e faqes, dhe i dërgon te
-      <code>shporta.app</code> për të gjetur çmime dhe dupe në dyqane të tjera. Në faqet që nuk janë produkte nuk dërgon asgjë.
+      <code>shporta.app</code> për të gjetur çmime dhe alternativa në dyqane të tjera. Në faqet që nuk janë produkte nuk dërgon asgjë.
       Nuk lexon fjalëkalime, formularë, të dhëna pagese apo historinë e shfletimit, nuk ruan asgjë në kompjuterin tënd dhe nuk
       ruan te ne të dhënat e faqes që ke hapur. Klikimet nga paneli drejt dyqaneve numërohen si te faqja, me <code>/go/</code>.</p>
     <h2>Zgjedhja jote</h2>
@@ -1480,7 +1479,7 @@ const MI = (d) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="
 const MENU = [
   [null, [
     ["/kategorite", "Kategoritë", MI('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>')],
-    ["/dupe", "Dupe: alternativa më të lira", MI('<path d="M8 4h8l-1 5H9z"/><path d="M9 9c-2 2-3 4-3 7a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4c0-3-1-5-3-7"/>')],
+    ["/alternativa", "Alternativa më të lira", MI('<path d="M8 4h8l-1 5H9z"/><path d="M9 9c-2 2-3 4-3 7a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4c0-3-1-5-3-7"/>')],
     ["/raport", "Raporti i çmimeve", MI('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>')],
     ["/dyqanet", "Dyqanet", MI('<path d="M4 9l1.5-5h13L20 9M4 9h16v11H4zM9 20v-6h6v6"/>')],
   ]],
@@ -2086,7 +2085,8 @@ async function route() {
     else if (pathname === "/privatesia") pagePrivacy();
     else if (pathname === "/rreth") await pageAbout();
     else if (pathname === "/per-dyqanet") pageForShops(params);
-    else if (pathname === "/dupe") await pageDupes(params);
+    else if (pathname === "/alternativa") await pageDupes(params);
+    else if (pathname === "/dupe") { history.replaceState(history.state, "", "/alternativa"); await pageDupes(""); }
     else if (pathname === "/ndaj") await pageShare(params);
     else if (pathname === "/lista") await pageList();
     else if (pathname === "/njoftime") await pageNotes();

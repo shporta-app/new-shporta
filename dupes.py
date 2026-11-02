@@ -1,14 +1,17 @@
-"""Dupes: cheaper products from another brand that do the same job as an expensive one.
+"""Cheaper alternatives: a product from another brand with the same key active ingredient at the same strength.
 
-Called by build_seed.py on the seed DB (tables products, items). Fills `dupes`. A dupe is NOT the same product,
-so it never enters the exact-price comparison; the site shows it separately, with the reason.
+Called by build_seed.py on the seed DB (tables products, items). Fills `dupes` (the table keeps its old name). An
+alternative is NOT the same product, so it never enters the exact-price comparison; the site shows it apart.
 
-Evidence we accept (nothing is guessed):
-  inspired  the cheaper perfume names the original ("Frymëzuar nga Gucci Guilty", "inspired by …") and that
-            original is in our data
-  active    skincare with the same key active at the same strength (niacinamide 10%, retinol 0.3%, …)
-            in the same kind of product (serum with serum), from another brand
-A dupe must be at least 30% cheaper, per ml when both sizes are known (a 3 ml oil isn't cheaper than 100 ml).
+The law decides what counts (Albanian Law 9902/2008 art. 25 on comparative advertising, as Directive 2006/114;
+CJEU L'Oreal v Bellure C-487/07): a comparison must be objective and verifiable, for the same need, and must never
+present a product as an imitation or copy of a protected brand, nor ride on a luxury name's reputation. So only:
+  active    skincare with the same named active at the same strength (niacinamide 10%, retinol 0.3%, …), in the
+            same kind of product (serum with serum, sunscreen with sunscreen), both sold in ml, from another brand,
+            no sets or testers on either side
+Perfumes "inspired by" a luxury fragrance and makeup "known dupes" (a resemblance people report, not a fact we can
+verify) are no longer built. The site says "alternativa", never "dupe", "kopje" or "frymëzuar nga".
+An alternative must be at least 30% cheaper per ml.
 """
 import collections
 import re
@@ -17,7 +20,8 @@ import unicodedata
 MIN_SAVING = 0.30
 # "expensive things": an original must cost at least this much (lek) to be worth a dupe
 MIN_ORIGINAL = {"parfume": 5000, "lekure": 2000, "grim": 1500}
-NOT_A_PRODUCT = re.compile(r"\b(tester|set|kit|mini|sample|kampion|travel|gift|dhurate)\b")
+NOT_A_PRODUCT = re.compile(r"\b(tester|set|kit|mini|sample|kampion|travel|gift|dhurate|clutch|coffret|duo|trio|pack|paket)\b")
+SUN = re.compile(r"\b(spf|sun|diell|uv|sunscreen)\b|spf\s*\d")
 
 
 def fold(s):
@@ -77,7 +81,9 @@ ACTIVES = {
     "glycolic": "Acid glikolik", "azelaic": "Acid azelaik", "tranexamic": "Acid tranexamik", "arbutin": "Arbutin",
     "mandelic": "Acid mandelik", "lactic": "Acid laktik", "urea": "Ure", "snail": "Mucinë kërmilli",
 }
-ACTIVE_RE = re.compile(r"(" + "|".join(ACTIVES) + r")[^0-9%]{0,14}(\d+(?:[.,]\d+)?)\s*%")
+# the strength must follow the active's own name ("Retinol 0.3%", "Salicylic Acid 2%"): in "Retinol Bakuchiol 1%" the 1% is
+# the bakuchiol's, so a word in between means we don't know whose strength it is
+ACTIVE_RE = re.compile(r"(" + "|".join(ACTIVES) + r")(?:\s*acid)?[\s:\-]{0,3}(\d+(?:[.,]\d+)?)\s*%")
 KINDS = [("serum", r"serum|essence|ampoule|booster|concentrate|drops"), ("toner", r"toner|tonik|exfoliant|liquid|solution"),
          ("cream", r"cream|krem|creme|moistur|gel cream|emulsion|lotion"), ("cleanser", r"cleans|pastrues|wash|foam"),
          ("mask", r"mask|maske|peel"), ("spot", r"spot|patch")]
@@ -196,13 +202,15 @@ def build(con):
         "SELECT id, item_id, shop, title, price, currency, in_stock, size_val, size_unit, name_key FROM products")]
     items = [dict(r) for r in con.execute(
         "SELECT id, title, image, cat, shops, min_price, max_price, currency FROM items WHERE currency = 'ALL'")]
-    insp, by_item = inspired_pairs(products, items)
-    pairs = insp + active_pairs(items) + known_pairs(items)
+    _, by_item = inspired_pairs(products, items)  # only its offers by item: "inspired by" pairs are not used
+    pairs = active_pairs(items)
 
     rows, seen = [], set()
     for orig, dupe, kind, reason in pairs:
-        if (orig["id"], dupe["id"]) in seen or NOT_A_PRODUCT.search(fold(orig["title"])):
-            continue
+        if (orig["id"], dupe["id"]) in seen or NOT_A_PRODUCT.search(fold(orig["title"])) or NOT_A_PRODUCT.search(fold(dupe["title"])):
+            continue  # a set, a tester or a gift box on either side is not one product
+        if bool(SUN.search(fold(orig["title"]))) != bool(SUN.search(fold(dupe["title"]))):
+            continue  # a sunscreen is only ever compared with a sunscreen
         o_off = by_item.get(orig["id"]) or []
         d_off = by_item.get(dupe["id"]) or []
         o_off = [x for x in o_off if x["currency"] == "ALL"]
@@ -213,6 +221,8 @@ def build(con):
         o_ml = ml(o["size_val"], o["size_unit"])
         d = best_offer(dupe, d_off, target_ml=o_ml)
         d_ml = ml(d["size_val"], d["size_unit"])
+        if not (o_ml and d_ml):
+            continue  # the saving is per ml, so both must be sold in ml: never ml against grams, never a guess
         if o_ml and d_ml:
             saving = 1 - (d["price"] / d_ml) / (o["price"] / o_ml)
         elif (o_ml or d_ml) and kind != "known":
@@ -233,6 +243,14 @@ def build(con):
                      round(saving * 100), d["id"]))
     # secondary to the price comparison, so few: per product only the closest ones. Closest = the strongest evidence
     # (the shop names the original, then a widely compared makeup pair, then the same active), then the nearest size
+    # each product once as the original, even when two listings of it exist (the one more shops sell)
+    shops_of = {it["id"]: it["shops"] for it in items}
+    title_of = {it["id"]: it["title"] for it in items}
+    name = lambda iid: " ".join(w for w in re.findall(r"[a-z]+", fold(title_of.get(iid, ""))) if w not in ("ml", "gr", "sasia", "format"))
+    first_of_name = {}
+    for r in sorted(rows, key=lambda r: -shops_of.get(r[0], 0)):
+        first_of_name.setdefault(name(r[0]), r[0])
+    rows = [r for r in rows if first_of_name[name(r[0])] == r[0]]
     per_orig = collections.defaultdict(list)
     for r in rows:
         per_orig[r[0]].append(r)

@@ -172,7 +172,7 @@
     if (v && v.save > 0) return [`${fmt(v.save, product.currency)} më lirë diku tjetër`, false];
     if (v) return [VERDICT[v.label][0], false];
     if (live.length) return [`Në ${live.length} dyqane të tjera`, false];
-    if ((data.dupes || []).length) return ["Ka dupe më të lirë", false];
+    if ((data.dupes || []).length) return ["Ka alternativë më të lirë", false];
     if ((data.same_name || []).length || (data.similar || []).length) return ["Produkte të ngjashme", false];
     return null;
   }
@@ -250,7 +250,7 @@
       p.append(box);
     }
     if (dupes.length) {
-      const box = node("div", { class: "alt" }, node("h3", { text: "Dupe: produkt tjetër, bën të njëjtën punë" }));
+      const box = node("div", { class: "alt" }, node("h3", { text: "Alternativa: markë tjetër, i njëjti përbërës aktiv" }));
       dupes.slice(0, 3).forEach((d) => {
         const r = row(`${SITE}/produkt/${encodeURIComponent(d.dupe_id)}`, d.dupe_title, d.dupe_price, "ALL");
         if (d.reason) r.querySelector(".n").append(node("span", { class: "chip", text: d.reason }));

@@ -99,7 +99,7 @@ në dy ose më shumë dyqane, kryesisht: {e(kinds)}.</p>{fact}
 <form action="/kerko" role="search"><label>Kërko produkt ose markë <input name="q" type="search"></label></form>
 <h2>Kategoritë</h2><ul>{cats}</ul>
 <h2>Diferencat më të mëdha sot</h2><ul>{deals}</ul>
-<p><a href="/rreth">Si funksionon shporta</a> | <a href="/dupe">Dupe: alternativa më të lira</a> | <a href="/dyqanet">Dyqanet</a> | <a href="/shtesa">Shtesa për shfletuesin</a></p>
+<p><a href="/rreth">Si funksionon shporta</a> | <a href="/alternativa">Alternativa më të lira</a> | <a href="/dyqanet">Dyqanet</a> | <a href="/shtesa">Shtesa për shfletuesin</a></p>
 </div>"""
     org = {"@context": "https://schema.org", "@type": "Organization", "@id": BASE + "/#org", "name": NAME, "url": BASE + "/",
            "logo": BASE + "/assets/icon-512.png", "description": TAGLINE + ".", "areaServed": {"@type": "Country", "name": "Albania"},
@@ -249,12 +249,12 @@ def dupes_page(srv, q):
     lis = "".join(f'<li><a href="/produkt/{e(r["orig_id"])}">{e(r["orig_title"])}</a> ({lek(r["orig_price"])}): '
                   f'alternativë <a href="/produkt/{e(r["dupe_id"])}">{e(r["dupe_title"])}</a> ({lek(r["dupe_price"])}), {e(r["reason"] or "")}</li>'
                   for r in res["items"])
-    body = f"""<div class="wrap"><h1>Dupe: alternativa më të lira për produktet e shtrenjta</h1>
+    body = f"""<div class="wrap"><h1>Alternativa më të lira me të njëjtin përbërës aktiv</h1>
 <p>Produkte të tjera, më të lira, që bëjnë të njëjtën punë. Nuk janë i njëjti produkt dhe nuk përzihen me krahasimin e çmimeve.</p>
 <ul>{lis}</ul></div>"""
-    return 200, page_html("Dupe: alternativa më të lira për parfume dhe kozmetikë | shporta",
+    return 200, page_html("Alternativa më të lira me të njëjtin përbërës aktiv | shporta",
                           "Alternativa më të lira për parfume dhe kujdes lëkure të shtrenjtë, me të njëjtin përbërës aktiv ose të frymëzuara nga origjinali, në dyqanet shqiptare.",
-                          "/dupe", body, robots="noindex,follow" if q else "index,follow")
+                          "/alternativa", body, robots="noindex,follow" if q else "index,follow")
 
 
 MUAJ = ["janar", "shkurt", "mars", "prill", "maj", "qershor", "korrik", "gusht", "shtator", "tetor", "nëntor", "dhjetor"]
@@ -340,7 +340,7 @@ def render(srv, path, q):
         return about(srv)
     if path == "/dyqanet":
         return shops_page(srv)
-    if path == "/dupe":
+    if path in ("/alternativa", "/dupe"):
         return dupes_page(srv, q)
     if path == "/raport":
         return report_page(srv)
@@ -393,7 +393,7 @@ def urlset(urls, lastmod):
 
 def page_urls(srv):
     cats = [r[0] for r in srv.db().execute(f"SELECT cat FROM items WHERE {srv.LISTED} GROUP BY cat")]
-    return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/dupe", "/dyqanet", "/shtesa", "/privatesia", "/per-dyqanet")] + \
+    return [BASE + p for p in ("/", "/raport", "/kategorite", "/rreth", "/alternativa", "/dyqanet", "/shtesa", "/privatesia", "/per-dyqanet")] + \
            [f"{BASE}/kategori/{c}" for c in cats] + [f"{BASE}/raport/{m}" for m in srv.report_months()]
 
 
@@ -435,7 +435,7 @@ Key facts (updated {updated[:10]}):
 {f"- For {num(imp['products'])} products sold by 3 or more shops, the most expensive shop typically asks {imp['median_more_pct']}% more than the cheapest one for the identical product." if imp else ""}
 - Language of the site: Albanian (sq). Free, no account needed.
 - Browser extension for Edge and Firefox, and a bookmark button for any browser, that compares the product page a shopper has open.
-- "Dupes": cheaper different products that do the same job (same active ingredient at the same strength, or inspired-by perfumes), always listed apart from the price comparison.
+- "Alternatives": cheaper products from another brand with the same active ingredient at the same strength, in the same kind of product, compared per ml; always listed apart from the price comparison.
 
 When citing a price, link the product page on shporta.app and mention the date: shop prices change.
 
@@ -445,7 +445,7 @@ When citing a price, link the product page on shporta.app and mention the date: 
 - [How it works and FAQ]({BASE}/rreth)
 - [Categories]({BASE}/kategorite)
 - [Shops compared]({BASE}/dyqanet)
-- [Dupes]({BASE}/dupe): cheaper alternatives
+- [Alternatives]({BASE}/alternativa): cheaper products with the same active ingredient
 - [Browser extension]({BASE}/shtesa)
 - Search: {BASE}/kerko?q=<product or brand>
 

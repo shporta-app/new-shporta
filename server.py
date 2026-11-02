@@ -397,18 +397,18 @@ DUPE_FROM = "FROM dupes x JOIN items o ON o.id = x.item_id JOIN items d ON d.id 
 
 def dupes_of(item_id, limit=3):
     """The closest dupes first (dupes.py keeps at most three per product): the strongest evidence, then the saving."""
-    return item_rows(f"""SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.item_id = ?
-                         ORDER BY CASE x.kind WHEN 'inspired' THEN 0 WHEN 'known' THEN 1 ELSE 2 END, x.save_pct DESC LIMIT ?""",
+    return item_rows(f"""SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.item_id = ? AND x.kind = 'active'
+                         ORDER BY x.save_pct DESC LIMIT ?""",
                      (item_id, limit))
 
 
 def originals_of(item_id):
-    return item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.dupe_id = ? ORDER BY o.shops DESC LIMIT 3", (item_id,))
+    return item_rows(f"SELECT {DUPE_COLS} {DUPE_FROM} WHERE x.dupe_id = ? AND x.kind = 'active' ORDER BY o.shops DESC LIMIT 3", (item_id,))
 
 
 def dupe_list(q):
     """One row per expensive product: its best dupe. Newest perfume and skincare finds first by price."""
-    kind = q.get("kind") if q.get("kind") in ("inspired", "active", "known") else None
+    kind = "active"  # the only kind we show: the same active ingredient at the same strength (dupes.py, the law)
     page = page_num(q)
     # one row per expensive product; for a well-known makeup pair, one row per pair (not one per Dior shade)
     where = ("WHERE x.save_pct = (SELECT MAX(save_pct) FROM dupes y WHERE y.item_id = x.item_id)"
@@ -1266,27 +1266,29 @@ def page_dupes(title, price, currency, offers):
             return rows
     if not price or currency != "ALL":
         return []
-    # perfume: the page names an original that shops sell "inspired by" versions of ("Creed Aventus")
-    words = set(re.findall(r"[a-z0-9]+", dupes.fold(title)))
-    for reason, orig_id in db().execute("SELECT DISTINCT reason, item_id FROM dupes WHERE kind = 'inspired'"):
-        name = [w for w in re.findall(r"[a-z0-9]+", dupes.fold(reason.split(" nga ", 1)[-1])) if w not in dupes.GENDER]
-        if len(name) >= 2 and all(w in words for w in name):
-            rows = [r for r in dupes_of(orig_id) if r["dupe_price"] <= price * 0.7]
-            if rows:
-                return rows
+    from match import SIZE_RE, size_of
     m = dupes.ACTIVE_RE.search(dupes.fold(title))
     acts, kind = dupes.actives(title), dupes.kind_of(title)
-    if not (m and kind):
-        return []
+    page_size = SIZE_RE.search(fold(title))
+    page_ml = dupes.ml(*size_of(page_size)) if page_size else None
+    if not (m and kind and page_ml) or dupes.NOT_A_PRODUCT.search(dupes.fold(title)):
+        return []  # without the page's size in ml we can't compare per ml, so no alternative is shown
     out = []
     for it in item_rows(f"""SELECT {ITEM_COLS} FROM items WHERE cat = 'lekure' AND currency = 'ALL' AND in_stock_shops >= 1
                             AND search LIKE ? AND search LIKE ? AND min_price <= ? ORDER BY min_price LIMIT 300""",
                         (f"%{m.group(1)}%", f"%{m.group(2)}%", price * 0.7)):
-        if dupes.actives(it["title"]) == acts and dupes.kind_of(it["title"]) == kind \
+        it_size = SIZE_RE.search(fold(it.get("size") or it["title"]))
+        it_ml = dupes.ml(*size_of(it_size)) if it_size else None
+        if not it_ml or dupes.NOT_A_PRODUCT.search(dupes.fold(it["title"])):
+            continue
+        if bool(dupes.SUN.search(dupes.fold(it["title"]))) != bool(dupes.SUN.search(dupes.fold(title))):
+            continue
+        saving = 1 - (it["min_price"] / it_ml) / (price / page_ml)
+        if saving >= dupes.MIN_SAVING and dupes.actives(it["title"]) == acts and dupes.kind_of(it["title"]) == kind \
                 and not dupes.same_brand(it["title"], title):
             out.append({"kind": "active", "reason": dupes.reason(acts), "dupe_id": it["id"],
                         "dupe_title": it["title"], "dupe_image": it["image"], "dupe_price": it["min_price"],
-                        "save_pct": round((1 - it["min_price"] / price) * 100)})
+                        "save_pct": round(saving * 100)})
         if len(out) == 3:
             break
     return out
